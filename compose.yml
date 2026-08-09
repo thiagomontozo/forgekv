@@ -2,17 +2,23 @@ services:
   forgekv:
     build:
       context: .
-    image: forgekv:0.1.0
+    image: forgekv:0.2.0
     restart: unless-stopped
     environment:
       FORGEKV_HOST: 0.0.0.0
       FORGEKV_PORT: 6380
       FORGEKV_DATA_DIR: /data
       FORGEKV_SHARDS: 64
-      FORGEKV_FSYNC: always
+      FORGEKV_FSYNC: everysec
+      FORGEKV_MAX_CONNECTIONS: 1024
+      FORGEKV_WAL_COMPACTION_THRESHOLD_BYTES: 67108864
+      FORGEKV_METRICS_ENABLED: "true"
+      FORGEKV_METRICS_HOST: 0.0.0.0
+      FORGEKV_METRICS_PORT: 9090
       RUST_LOG: info
     ports:
       - "6380:6380"
+      - "9090:9090"
     volumes:
       - forgekv-data:/data
     stop_grace_period: 15s

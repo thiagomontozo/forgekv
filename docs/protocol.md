@@ -91,7 +91,7 @@ repeat field_count times:
     u8  value[value_length]     # UTF-8
 ```
 
-v0.1 fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, and `fsync`. Clients must ignore unknown fields for forward compatibility.
+Fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, and `fsync`. Clients must ignore unknown fields for forward compatibility.
 
 ### STATS metric map
 
@@ -103,7 +103,7 @@ repeat field_count times:
     u64 value
 ```
 
-v0.1 fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`.
+The base fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`. v0.2 additionally reports `connections_rejected_total`, `snapshots_created_total`, `wal_compactions_total`, and `snapshot_entries_written`.
 
 ## Command semantics
 
@@ -138,4 +138,4 @@ length=2     v1 PONG
 
 ## Robust client behavior
 
-A client must cap response lengths before allocation, verify the expected payload shape for the returned status, reject unsupported versions, and treat a truncated response as a connection failure. Protocol v1 has no request identifiers; clients sharing a socket must serialize reads and writes or preserve strict request order.
+A client must cap response lengths before allocation, verify the expected payload shape for the returned status, reject unsupported versions, and treat a truncated response as a connection failure. Protocol v1 has no request identifiers. Pipelined clients may write multiple complete frames without waiting, but must read exactly one response per request in the same order.

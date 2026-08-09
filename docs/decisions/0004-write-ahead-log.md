@@ -14,4 +14,4 @@ Append a versioned binary record for every `SET`, `DEL`, `SETEX`, and `PERSIST` 
 
 ## Consequences
 
-Recovery behavior is deterministic and the durability trade-off is configurable. Mutations are serialized by one ordering guard, the log grows without bound, and CRC32 detects accidental damage rather than malicious modification. Compaction, snapshots, group commit, and `everysec` are deferred.
+Recovery behavior is deterministic and the durability trade-off is configurable. Mutations are serialized by one ordering guard, and CRC32 detects accidental damage rather than malicious modification. v0.2 adds snapshots, compaction, and `everysec`; group commit remains deferred.

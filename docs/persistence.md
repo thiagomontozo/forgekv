@@ -2,7 +2,7 @@
 
 ## Purpose and path
 
-ForgeKV v0.1 persists mutations in one append-only binary write-ahead log at `${FORGEKV_DATA_DIR}/forgekv.wal`. The default path is `data/forgekv.wal`. The WAL is the durable history used to reconstruct the in-memory store; v0.1 has no snapshots or compaction.
+ForgeKV v0.2 persists mutations in `${FORGEKV_DATA_DIR}/forgekv.wal` and compacted state in `${FORGEKV_DATA_DIR}/forgekv.snapshot`. Recovery loads the snapshot first and replays the remaining WAL afterward.
 
 ## File header
 
@@ -64,27 +64,34 @@ The guard deliberately covers both the awaited append and the short memory opera
 
 ### `always`
 
-Each acknowledged mutation has completed `sync_data` before memory changes and before its response. This is the stronger v0.1 policy, but it trades throughput and latency for durability. Filesystem, drive cache, hardware, and operating system behavior still affect end-to-end guarantees.
+Each acknowledged mutation has completed `sync_data` before memory changes and before its response. This is the strongest policy, but it trades throughput and latency for durability. Filesystem, drive cache, hardware, and operating system behavior still affect end-to-end guarantees.
 
 ### `none`
 
 Each record is written and flushed through the process buffer, but ForgeKV does not request a per-record disk synchronization. The operating system may delay physical persistence. A process or machine crash can lose recent acknowledged writes.
 
-`everysec` is reserved for v0.2 and is not accepted by the v0.1 configuration parser.
+### `everysec`
+
+Acknowledged mutations are flushed without a per-command `sync_data`. A cancellation-aware maintenance task synchronizes dirty WAL data once per second and graceful shutdown performs a final synchronization. A machine crash can therefore lose roughly the most recent second of acknowledged mutations.
+
+## Snapshot format
+
+The 16-byte snapshot header contains ASCII `FKVS`, version `0x01`, three zero reserved bytes, and a big-endian `u64` entry count. Each entry contains `u64 expires_at_ms` (`u64::MAX` for persistent), `u32 key_length`, `u32 value_length`, key bytes, value bytes, and CRC32. The checksum covers the fixed entry fields plus key and value. Snapshot truncation, invalid lengths, trailing bytes, or checksum failure stops recovery.
+
+## Compaction
+
+When the WAL reaches `FORGEKV_WAL_COMPACTION_THRESHOLD_BYTES`, ForgeKV holds the mutation ordering guard, captures live entries, writes and synchronizes `forgekv.snapshot.tmp`, installs it with a recoverable backup rename, and resets the WAL to its header. A crash before WAL reset replays the older WAL over an equivalent snapshot; a crash after reset starts from the installed snapshot. A threshold of `0` disables automatic compaction.
 
 ## Recovery
 
 Before accepting clients ForgeKV:
 
-1. validates the file header;
-2. reads the next four-byte record magic;
-3. reads fixed fields without allocating key/value memory;
-4. validates key/value lengths and checked total size;
-5. reads exactly the bounded variable section and checksum;
-6. validates version, reserved bytes, record type, field semantics, and CRC32;
-7. applies the mutation in file order;
-8. repeats until the physical end of the file;
-9. purges expired keys and reports replay counts.
+1. validates and loads the snapshot when present;
+2. validates the WAL file header;
+3. reads each record without unbounded allocation;
+4. validates lengths, fields, and CRC32;
+5. applies mutations in file order;
+6. purges expired keys and reports snapshot and replay counts.
 
 `SETEX` stores an absolute timestamp. During replay, a `SETEX` already expired at recovery time removes any previous value for that key instead of recreating it. `PERSIST` removes a live expiration if the key exists.
 
@@ -107,7 +114,7 @@ Any of these stops recovery with an explicit error. ForgeKV does not scan for th
 
 - A crash before a complete record reaches disk leaves memory irrelevant; recovery uses the last valid WAL boundary.
 - A crash after a valid WAL append but before memory update replays the mutation on restart.
-- `always` asks the OS to synchronize each record; `none` intentionally does not.
-- WAL growth is unbounded in v0.1.
-- There is no snapshot, compaction, group commit, encryption, or authenticated checksum.
+- `always` asks the OS to synchronize each record; `everysec` synchronizes dirty data periodically; `none` intentionally does not request disk synchronization.
+- Compaction is size-triggered and snapshots contain the complete live data set.
+- There is no incremental snapshot, group commit, encryption, or authenticated checksum.
 - CRC32 detects accidental corruption; it is not a cryptographic integrity mechanism.

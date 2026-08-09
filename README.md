@@ -2,7 +2,7 @@
 
 High-performance persistent key-value store written in Rust.
 
-> Current status: **Experimental.** ForgeKV is a systems engineering project and is not production ready.
+> Current status: **Experimental (v0.2.0).** ForgeKV is a systems engineering project and is not production ready.
 
 ## Overview
 
@@ -22,12 +22,16 @@ ForgeKV exists as a focused systems programming portfolio project. It makes the 
 - Deterministically sharded in-memory store using per-shard read/write locks
 - Lazy and periodic background expiration without one task per key
 - Binary write-ahead log with CRC32 checksums
+- Versioned checksummed snapshots and automatic WAL compaction
 - Ordered replay, expired-record handling, and safe final-tail truncation
-- Explicit `always` and `none` fsync policies
+- Explicit `always`, `everysec`, and `none` fsync policies
 - Concurrent Tokio connection handling and graceful shutdown
+- Configurable connection limit with rejection metrics
+- Ordered client pipelining over one TCP connection
+- Prometheus text metrics endpoint without a web framework
 - Atomic internal counters exposed by `STATS`
 - Integration tests, Criterion benchmarks, container assets, and GitHub Actions
-- Zero `unsafe` in v0.1, enforced at crate level
+- Zero `unsafe` in v0.2, enforced at crate level
 
 ## Architecture
 
@@ -67,7 +71,7 @@ See [Architecture](docs/architecture.md) for lifecycle and concurrency details.
 
 Each request is a length-prefixed frame containing a protocol version, an opcode, and an opcode-specific payload. The decoder rejects oversized frames before allocating their body. Keys are mapped to shards with deterministic FNV-1a hashing. Reads and unrelated writes can proceed across separate shard locks.
 
-`SET`, `DEL`, `SETEX`, and `PERSIST` first append a checksummed record to the WAL. The mutation remains under the same ordering guard until it is applied to the selected shard. On restart, valid records are replayed sequentially. An incomplete record at the physical end is truncated; checksum failure or structural corruption in a complete record stops startup with an error.
+`SET`, `DEL`, `SETEX`, and `PERSIST` first append a checksummed record to the WAL. The mutation remains under the same ordering guard until it is applied to the selected shard. Automatic compaction writes a checksummed snapshot atomically and then resets the WAL. On restart, ForgeKV loads the snapshot before replaying valid WAL records. An incomplete WAL record at the physical end is truncated; checksum failure or structural corruption stops startup.
 
 ## Getting Started
 
@@ -93,7 +97,7 @@ The repository's authoritative executable validation runs in GitHub Actions.
 cargo run --release --bin forgekv-server
 ```
 
-The default address is `127.0.0.1:6380` and the default WAL is `data/forgekv.wal`. Set `RUST_LOG=debug` for additional lifecycle diagnostics. User values are never written to logs.
+The default database address is `127.0.0.1:6380`, metrics are exposed on `127.0.0.1:9090/metrics`, and persistent files use the `data` directory. Set `RUST_LOG=debug` for additional lifecycle diagnostics. User values are never written to logs.
 
 ## CLI Usage
 
@@ -112,7 +116,7 @@ forgekv-cli info
 forgekv-cli stats
 ```
 
-CLI keys and values come from command-line UTF-8 arguments. The protocol and database themselves preserve arbitrary bytes. `SETEX` accepts seconds in the CLI; `TTL` reports milliseconds (`-1` means persistent and `-2` means missing).
+CLI keys and values come from command-line UTF-8 arguments. The protocol and database themselves preserve arbitrary bytes. `SETEX` accepts seconds in the CLI; `TTL` reports milliseconds (`-1` means persistent and `-2` means missing). Library clients can use `Client::execute_pipeline` to send up to 1,024 commands before reading their ordered responses.
 
 ## Wire Protocol
 
@@ -122,7 +126,7 @@ The complete request, response, status, and error contract is in [Wire Protocol]
 
 ## Persistence
 
-The WAL is versioned and stores typed mutation records with timestamps, optional absolute expiration, lengths, and a CRC32 checksum. With `FORGEKV_FSYNC=always`, every append is flushed and synchronized before memory changes. With `none`, writes are handed to the operating system without a per-record disk synchronization guarantee.
+The WAL is versioned and stores typed mutation records with timestamps, optional absolute expiration, lengths, and a CRC32 checksum. Snapshots are written to `forgekv.snapshot` through a synchronized temporary file and atomic replacement. `always` synchronizes every mutation, `everysec` synchronizes dirty WAL data once per second, and `none` leaves physical persistence to the operating system.
 
 See [Persistence](docs/persistence.md) for the byte layout and crash semantics.
 
@@ -142,7 +146,12 @@ See [Persistence](docs/persistence.md) for the byte layout and crash semantics.
 | `FORGEKV_MAX_KEY_SIZE` | `4096` | Maximum key bytes |
 | `FORGEKV_MAX_VALUE_SIZE` | `1048576` | Maximum value bytes |
 | `FORGEKV_EXPIRATION_INTERVAL_MS` | `1000` | Background expiration interval |
-| `FORGEKV_FSYNC` | `always` | `always` or `none` |
+| `FORGEKV_FSYNC` | `always` | `always`, `everysec`, or `none` |
+| `FORGEKV_MAX_CONNECTIONS` | `1024` | Concurrent clients; range `1..=1000000` |
+| `FORGEKV_WAL_COMPACTION_THRESHOLD_BYTES` | `67108864` | WAL size that triggers compaction; `0` disables it |
+| `FORGEKV_METRICS_ENABLED` | `true` | Enable the Prometheus text endpoint |
+| `FORGEKV_METRICS_HOST` | `127.0.0.1` | Metrics bind host |
+| `FORGEKV_METRICS_PORT` | `9090` | Metrics bind port |
 | `RUST_LOG` | `info` | `tracing-subscriber` filter |
 
 Invalid settings fail startup with a descriptive error. Network frame limits remain authoritative, so a configured value maximum cannot make a request exceed the frame maximum.
@@ -161,7 +170,7 @@ These commands are run remotely by `.github/workflows/ci.yml` on pushes to `main
 
 ## Benchmarking
 
-Criterion benchmarks cover in-memory `SET`, `GET` hit, and `GET` miss:
+Criterion benchmarks cover in-memory `SET`, `GET` hit, `GET` miss, and snapshot extraction over 1,000 entries:
 
 ```bash
 cargo bench --bench store
@@ -174,11 +183,21 @@ On Windows, `scripts/benchmark.ps1` runs the same suite. The manual `Benchmarks`
 The multi-stage image builds both binaries and runs the server as an unprivileged user with `/data` as its persistent directory.
 
 ```bash
-docker build -t forgekv:0.1.0 .
+docker build -t forgekv:0.2.0 .
 docker compose up -d
 ```
 
-Port `6380` is published and the Compose volume `forgekv-data` retains the WAL.
+Ports `6380` and `9090` are published and the Compose volume `forgekv-data` retains the WAL and snapshot.
+
+## Metrics
+
+When enabled, `GET /metrics` exposes internal counters in Prometheus text format:
+
+```bash
+curl http://127.0.0.1:9090/metrics
+```
+
+The endpoint is deliberately separate from the binary database protocol and does not expose stored keys or values.
 
 ## Project Structure
 
@@ -187,9 +206,9 @@ src/
   bin/          server and network CLI entry points
   client/       TCP protocol client
   command/      command model and payload parser
-  persistence/  WAL records, append path, and recovery
+  persistence/  WAL, snapshots, compaction, and recovery
   protocol/     binary frames and async codec
-  server/       accept loop, connection lifecycle, routing
+  server/       accept loop, connection lifecycle, routing, metrics export
   store/        entries, shards, TTL, deterministic hashing
   config.rs     validated environment configuration
   metrics.rs    lock-free counters
@@ -205,29 +224,20 @@ scripts/        manual PowerShell smoke and benchmark helpers
 - [ADR 0002: Custom binary protocol](docs/decisions/0002-custom-binary-protocol.md)
 - [ADR 0003: Sharded store](docs/decisions/0003-sharded-store.md)
 - [ADR 0004: Write-ahead log](docs/decisions/0004-write-ahead-log.md)
+- [ADR 0005: Snapshots and compaction](docs/decisions/0005-snapshots-and-compaction.md)
 
 ## Limitations
 
 - Single-node only; no replication or consensus
-- The WAL grows without compaction or snapshots
 - Mutations share one WAL ordering guard
 - No authentication, authorization, or TLS termination
 - No transaction groups or compare-and-swap operations
-- No connection limit in v0.1
 - Background expiration scans shards rather than using an expiration index
 - `FORGEKV_FSYNC=none` can lose recent acknowledged writes after a crash
-- Protocol version 1 does not implement pipelined response correlation
+- Snapshots briefly serialize mutations while their immutable entry list is captured
+- Pipelining preserves order but does not include request identifiers or out-of-order responses
 
 ## Roadmap
-
-### v0.2
-
-- WAL compaction and snapshots
-- `fsync=everysec`
-- Request pipelining
-- Connection limits
-- Metrics export
-- Expanded benchmark suite
 
 ### v0.3
 
@@ -242,7 +252,7 @@ scripts/        manual PowerShell smoke and benchmark helpers
 
 ## Contributing
 
-Issues and focused pull requests are welcome. Please keep the v0.1 constraints intact: stable Rust, no unsafe code, a custom TCP protocol, small justified dependencies, and explicit failure behavior. Run formatting, lint, and tests before submitting when your environment allows it.
+Issues and focused pull requests are welcome. Please keep the project constraints intact: stable Rust, no unsafe code, a custom TCP protocol, small justified dependencies, and explicit failure behavior. Run formatting, lint, and tests before submitting when your environment allows it.
 
 ## License
 

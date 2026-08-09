@@ -14,6 +14,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  format-source:
+    name: Format source artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format source
+        run: cargo fmt --all
+
+      - name: Upload formatted source
+        uses: actions/upload-artifact@v7
+        with:
+          name: rustfmt-v020-source
+          path: |
+            src
+            tests
+            benches
+          retention-days: 7
+
   validate:
     name: Format, lint, test, and build
     runs-on: ubuntu-latest

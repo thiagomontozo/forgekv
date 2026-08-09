@@ -2,7 +2,7 @@
 
 ## Scope
 
-ForgeKV v0.1 is a single-node persistent key-value database. It owns its TCP protocol, in-memory data structures, expiration, persistence, and recovery. It deliberately excludes HTTP, external databases, Redis compatibility, clustering, and advanced authentication.
+ForgeKV v0.2 is a single-node persistent key-value database. It owns its TCP protocol, in-memory data structures, expiration, persistence, and recovery. It deliberately excludes HTTP CRUD, external databases, Redis compatibility, clustering, and advanced authentication.
 
 ## Networking and async runtime
 
@@ -14,7 +14,7 @@ The four-byte frame length is read first. The server checks it against `FORGEKV_
 
 An atomic guard increments `connections_total` and `connections_active` when the handler starts and decrements the active count on every exit path. Connection logs contain peer addresses and error categories but never values. A client disconnect, malformed request, I/O error, or shutdown notification terminates only that connection task.
 
-There is no connection cap in v0.1. Adding a semaphore-based limit is a v0.2 objective.
+The accept loop uses a Tokio semaphore sized by `FORGEKV_MAX_CONNECTIONS`. Excess connections are closed immediately and counted without creating a handler task.
 
 ## Command execution
 
@@ -26,11 +26,13 @@ The router distinguishes read-only and mutating commands:
 
 The WAL guard is intentionally held across the asynchronous append and the following short in-memory mutation. This serializes mutations, but ensures another task cannot persist and apply a later command before the earlier command reaches memory. No store shard lock is held across an `.await`.
 
+Clients may pipeline up to 1,024 commands. The client writes all frames before reading responses; the server executes them sequentially per connection, preserving response order without request identifiers.
+
 ## Store and sharding
 
 The store owns a fixed vector of shards. Each shard is a standard `RwLock<HashMap<Vec<u8>, Entry>>`. There is no global map lock. ForgeKV computes a deterministic FNV-1a 64-bit hash and selects `hash % shard_count`.
 
-Per-shard locking reduces contention for unrelated keys and keeps dependencies small. It does not eliminate contention for hot keys or keys mapping to the same shard. FNV-1a is chosen for stable internal distribution, not cryptographic protection. Because v0.1 does not expose hash values or persist shard placement, a future version may change the hash function as long as replay rebuilds the store.
+Per-shard locking reduces contention for unrelated keys and keeps dependencies small. It does not eliminate contention for hot keys or keys mapping to the same shard. FNV-1a is chosen for stable internal distribution, not cryptographic protection. Because ForgeKV does not expose hash values or persist shard placement, a future version may change the hash function as long as replay rebuilds the store.
 
 Store operations are synchronous and short. They use `std::sync::RwLock` so no runtime-aware lock is held around an await. Lock poisoning becomes an explicit `StoreError`; it is not ignored.
 
@@ -56,7 +58,7 @@ There is never one task per key. The background task receives the same shutdown 
 
 The write-ahead log is the source used to rebuild memory. Every mutation has a typed record. A CRC32 protects each complete record. Startup validates the file header, record magic, version, reserved bytes, length limits, checked size arithmetic, type-specific fields, and checksum before applying a record.
 
-A short final record is treated as a crash tail and truncated to the last valid offset. Invalid magic, invalid fields, excessive lengths, or checksum failure in a complete record stops recovery. ForgeKV does not silently scan past corruption.
+A short final record is treated as a crash tail and truncated to the last valid offset. Invalid magic, invalid fields, excessive lengths, or checksum failure in a complete record stops recovery. Automatic compaction takes the same WAL ordering guard, captures live entries, writes a checksummed snapshot on a blocking worker, atomically installs it, and resets the WAL. Recovery loads the snapshot first and then replays the WAL.
 
 See [Persistence](persistence.md) for the exact format.
 
@@ -66,6 +68,8 @@ Hot-path counters use relaxed atomics because they are observational and do not 
 
 `tracing` records startup, WAL initialization and replay, connections, protocol and persistence errors, expiration, shutdown, and WAL flush. Stored values are never logged.
 
+A separate bounded HTTP listener exports Prometheus text metrics. It accepts only `GET /metrics`, caps request headers at 8 KiB, limits concurrent metrics clients to 64, uses short I/O timeouts, and is not part of the database command protocol.
+
 ## Graceful shutdown
 
 Ctrl+C sends a watch notification:
@@ -73,9 +77,9 @@ Ctrl+C sends a watch notification:
 1. the accept loop stops accepting;
 2. idle connection reads are cancelled;
 3. commands already executing finish their current lifecycle operation;
-4. the expiration task stops;
+4. expiration, periodic fsync, compaction, and metrics tasks stop;
 5. the server awaits all connection tasks;
-6. the main process flushes the WAL and synchronizes it when `fsync=always`;
+6. the main process flushes the WAL and synchronizes it when required by the configured policy;
 7. resources are dropped and the process exits.
 
 The server owns and awaits its background task and connection `JoinSet`, preventing orphaned tasks during a normal shutdown.
