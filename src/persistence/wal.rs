@@ -357,7 +357,8 @@ impl Database {
             .map_err(|error| PersistenceError::SnapshotTask(error.to_string()))??;
         let generation = self.wal_generation();
         let offset = wal.bytes_written();
-        self.metrics.replication_snapshot_created(entry_count as u64);
+        self.metrics
+            .replication_snapshot_created(entry_count as u64);
         Ok(ReplicationSnapshot {
             generation,
             offset,
@@ -393,8 +394,7 @@ impl Database {
         wal.reset().await?;
         self.store.replace_all(entries)?;
         wal.force_sync().await?;
-        usize::try_from(report.entries_loaded)
-            .map_err(|_| PersistenceError::InvalidRecordLength)
+        usize::try_from(report.entries_loaded).map_err(|_| PersistenceError::InvalidRecordLength)
     }
 
     fn advance_generation(&self) -> Result<u64, PersistenceError> {
@@ -474,8 +474,7 @@ fn read_record_batch(
         WalRecord::decode(&output[output_start..], limits, record_offset)?;
         record_offset = record_offset
             .checked_add(
-                u64::try_from(record_length)
-                    .map_err(|_| PersistenceError::InvalidRecordLength)?,
+                u64::try_from(record_length).map_err(|_| PersistenceError::InvalidRecordLength)?,
             )
             .ok_or(PersistenceError::InvalidRecordLength)?;
     }
@@ -526,9 +525,7 @@ fn decode_record_batch(
 fn read_file_limited(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, PersistenceError> {
     let mut file = File::open(path)?;
     let length = file.metadata()?.len();
-    if length
-        > u64::try_from(maximum_bytes).map_err(|_| PersistenceError::InvalidRecordLength)?
-    {
+    if length > u64::try_from(maximum_bytes).map_err(|_| PersistenceError::InvalidRecordLength)? {
         return Err(PersistenceError::InvalidMetadata(
             "snapshot exceeds configured replication limit",
         ));
@@ -544,14 +541,13 @@ fn read_exact_strict_record(
     buffer: &mut [u8],
     offset: u64,
 ) -> Result<(), PersistenceError> {
-    file.read_exact(buffer)
-        .map_err(|error| match error.kind() {
-            io::ErrorKind::UnexpectedEof => PersistenceError::Corruption {
-                offset,
-                reason: "truncated record in active WAL",
-            },
-            _ => PersistenceError::Io(error),
-        })
+    file.read_exact(buffer).map_err(|error| match error.kind() {
+        io::ErrorKind::UnexpectedEof => PersistenceError::Corruption {
+            offset,
+            reason: "truncated record in active WAL",
+        },
+        _ => PersistenceError::Io(error),
+    })
 }
 
 fn load_or_create_generation(path: &Path) -> Result<u64, PersistenceError> {

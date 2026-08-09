@@ -247,8 +247,7 @@ impl Config {
                 "port in 1..=65535",
             ));
         }
-        let leader_address =
-            lookup("FORGEKV_LEADER_ADDRESS").unwrap_or(defaults.leader_address);
+        let leader_address = lookup("FORGEKV_LEADER_ADDRESS").unwrap_or(defaults.leader_address);
         if replication_role == ReplicationRole::Follower && leader_address.trim().is_empty() {
             return Err(invalid(
                 "FORGEKV_LEADER_ADDRESS",
@@ -256,11 +255,7 @@ impl Config {
                 "non-empty leader address",
             ));
         }
-        let replication_interval_ms = parse_or(
-            "FORGEKV_REPLICATION_INTERVAL_MS",
-            250u64,
-            &lookup,
-        )?;
+        let replication_interval_ms = parse_or("FORGEKV_REPLICATION_INTERVAL_MS", 250u64, &lookup)?;
         if replication_interval_ms == 0 {
             return Err(invalid(
                 "FORGEKV_REPLICATION_INTERVAL_MS",

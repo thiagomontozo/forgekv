@@ -495,16 +495,18 @@ fn load_state(path: &Path) -> Result<ReplicaState, ReplicationError> {
         ));
     }
     let id_length = read_u16(&encoded, 24)? as usize;
-    let checksum_offset = STATE_FIXED_SIZE
-        .checked_add(id_length)
-        .ok_or(ReplicationError::InvalidProtocol(
-            "replica state length overflow",
-        ))?;
-    let expected_length = checksum_offset
-        .checked_add(4)
-        .ok_or(ReplicationError::InvalidProtocol(
-            "replica state length overflow",
-        ))?;
+    let checksum_offset =
+        STATE_FIXED_SIZE
+            .checked_add(id_length)
+            .ok_or(ReplicationError::InvalidProtocol(
+                "replica state length overflow",
+            ))?;
+    let expected_length =
+        checksum_offset
+            .checked_add(4)
+            .ok_or(ReplicationError::InvalidProtocol(
+                "replica state length overflow",
+            ))?;
     if id_length > MAX_NODE_ID_SIZE || encoded.len() != expected_length {
         return Err(ReplicationError::InvalidProtocol(
             "invalid replica state length",

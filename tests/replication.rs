@@ -74,12 +74,7 @@ async fn follower_receives_snapshot_then_incremental_wal() -> Result<(), Box<dyn
             Bytes::from_static(b"incremental-value"),
         )
         .await?;
-    initial_sync(
-        &follower_config,
-        Arc::clone(&follower),
-        follower_metrics,
-    )
-    .await?;
+    initial_sync(&follower_config, Arc::clone(&follower), follower_metrics).await?;
     assert_eq!(
         follower.store().get(b"incremental:key")?,
         Some(Bytes::from_static(b"incremental-value"))
@@ -94,8 +89,12 @@ async fn follower_receives_snapshot_then_incremental_wal() -> Result<(), Box<dyn
         follower_config.shards,
         Arc::clone(&restart_metrics),
     )?);
-    let (_restart, _) = Database::open(&follower_config, Arc::clone(&restart_store), restart_metrics)
-        .await?;
+    let (_restart, _) = Database::open(
+        &follower_config,
+        Arc::clone(&restart_store),
+        restart_metrics,
+    )
+    .await?;
     assert_eq!(
         restart_store.get(b"snapshot:key")?,
         Some(Bytes::from_static(b"snapshot-value"))

@@ -170,12 +170,8 @@ impl Metrics {
                 .replication_connections_total
                 .load(Ordering::Relaxed),
             replication_syncs_total: self.replication_syncs_total.load(Ordering::Relaxed),
-            replication_full_syncs_total: self
-                .replication_full_syncs_total
-                .load(Ordering::Relaxed),
-            replication_bytes_sent_total: self
-                .replication_bytes_sent_total
-                .load(Ordering::Relaxed),
+            replication_full_syncs_total: self.replication_full_syncs_total.load(Ordering::Relaxed),
+            replication_bytes_sent_total: self.replication_bytes_sent_total.load(Ordering::Relaxed),
             replication_bytes_received_total: self
                 .replication_bytes_received_total
                 .load(Ordering::Relaxed),
