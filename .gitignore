@@ -1,0 +1,14 @@
+/target
+/data
+*.wal
+.env
+*.tmp
+*.temp
+*.swp
+*~
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.rs.bk
+

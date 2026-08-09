@@ -1,0 +1,32 @@
+[package]
+name = "forgekv"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "High-performance persistent key-value store written in Rust."
+license = "MIT"
+repository = "https://github.com/thiagomontozo/forgekv"
+keywords = ["database", "key-value", "persistence", "tcp", "tokio"]
+categories = ["database-implementations", "network-programming"]
+
+[dependencies]
+bytes = "1"
+crc32fast = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+criterion = { version = "0.7", features = ["html_reports"] }
+tempfile = "3"
+
+[[bench]]
+name = "store"
+harness = false
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true
+
