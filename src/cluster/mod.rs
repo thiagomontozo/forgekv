@@ -41,9 +41,9 @@ impl ClusterTopology {
         virtual_nodes: usize,
     ) -> Result<Self, ConfigError> {
         if !(1..=MAX_VIRTUAL_NODES).contains(&virtual_nodes) {
-            return Err(ConfigError::InvalidCombination(
-                format!("cluster virtual node count must be in 1..={MAX_VIRTUAL_NODES}"),
-            ));
+            return Err(ConfigError::InvalidCombination(format!(
+                "cluster virtual node count must be in 1..={MAX_VIRTUAL_NODES}"
+            )));
         }
         validate_node_id(local_node_id)?;
 
@@ -203,12 +203,9 @@ mod tests {
 
     #[test]
     fn every_configured_node_owns_keys() {
-        let topology = ClusterTopology::new(
-            "node-a",
-            "node-a@a:6380,node-b@b:6380,node-c@c:6380",
-            128,
-        )
-        .expect("topology should be valid");
+        let topology =
+            ClusterTopology::new("node-a", "node-a@a:6380,node-b@b:6380,node-c@c:6380", 128)
+                .expect("topology should be valid");
         let mut owners = std::collections::HashSet::new();
         for index in 0..10_000 {
             let key = Bytes::from(format!("key-{index}"));
@@ -227,12 +224,9 @@ mod tests {
     fn adding_a_node_only_moves_keys_to_the_new_node() {
         let before = ClusterTopology::new("node-a", "node-a@a:6380,node-b@b:6380", 128)
             .expect("topology should be valid");
-        let after = ClusterTopology::new(
-            "node-a",
-            "node-a@a:6380,node-b@b:6380,node-c@c:6380",
-            128,
-        )
-        .expect("topology should be valid");
+        let after =
+            ClusterTopology::new("node-a", "node-a@a:6380,node-b@b:6380,node-c@c:6380", 128)
+                .expect("topology should be valid");
         let mut moved = 0;
         for index in 0..10_000 {
             let key = Bytes::from(format!("migration-key-{index}"));

@@ -93,10 +93,7 @@ pub(super) async fn handle_connection(
     Ok(())
 }
 
-async fn execute(
-    command: Command,
-    context: &ConnectionContext,
-) -> Result<Response, ForgeError> {
+async fn execute(command: Command, context: &ConnectionContext) -> Result<Response, ForgeError> {
     let database = &context.database;
     let metrics = &context.metrics;
     let started_at = context.started_at;
@@ -153,21 +150,21 @@ async fn execute(
         Command::Info => {
             let mut fields = vec![
                 ("version".to_owned(), VERSION.to_owned()),
-            (
-                "uptime_seconds".to_owned(),
-                started_at.elapsed().as_secs().to_string(),
-            ),
-            ("keys".to_owned(), database.store().len()?.to_string()),
-            (
-                "shards".to_owned(),
-                database.store().shard_count().to_string(),
-            ),
-            ("listening_address".to_owned(), listening_address.to_owned()),
-            ("fsync".to_owned(), fsync.as_str().to_owned()),
-            (
-                "replication_role".to_owned(),
-                replication_role.as_str().to_owned(),
-            ),
+                (
+                    "uptime_seconds".to_owned(),
+                    started_at.elapsed().as_secs().to_string(),
+                ),
+                ("keys".to_owned(), database.store().len()?.to_string()),
+                (
+                    "shards".to_owned(),
+                    database.store().shard_count().to_string(),
+                ),
+                ("listening_address".to_owned(), listening_address.to_owned()),
+                ("fsync".to_owned(), fsync.as_str().to_owned()),
+                (
+                    "replication_role".to_owned(),
+                    replication_role.as_str().to_owned(),
+                ),
                 ("cluster_enabled".to_owned(), cluster.is_some().to_string()),
             ];
             if let Some(cluster) = cluster {

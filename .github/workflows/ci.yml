@@ -27,18 +27,8 @@ jobs:
         with:
           components: clippy,rustfmt
 
-      - name: Format source for remote validation
-        run: cargo fmt --all
-
-      - name: Upload formatted source
-        uses: actions/upload-artifact@v7
-        with:
-          name: rustfmt-v040-source
-          path: |
-            src
-            tests
-            benches
-          retention-days: 7
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings

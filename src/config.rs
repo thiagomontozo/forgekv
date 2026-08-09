@@ -514,10 +514,7 @@ mod tests {
         let values = HashMap::from([
             ("FORGEKV_CLUSTER_ENABLED", "true".to_owned()),
             ("FORGEKV_CLUSTER_NODE_ID", "node-a".to_owned()),
-            (
-                "FORGEKV_CLUSTER_NODES",
-                "node-a@127.0.0.1:6380".to_owned(),
-            ),
+            ("FORGEKV_CLUSTER_NODES", "node-a@127.0.0.1:6380".to_owned()),
             ("FORGEKV_ROLE", "leader".to_owned()),
         ]);
         assert!(Config::from_lookup(|name| values.get(name).cloned()).is_err());

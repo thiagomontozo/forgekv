@@ -191,9 +191,7 @@ impl Metrics {
             replication_errors_total: self.replication_errors_total.load(Ordering::Relaxed),
             replication_lag_bytes: self.replication_lag_bytes.load(Ordering::Relaxed),
             cluster_redirects_total: self.cluster_redirects_total.load(Ordering::Relaxed),
-            cluster_local_commands_total: self
-                .cluster_local_commands_total
-                .load(Ordering::Relaxed),
+            cluster_local_commands_total: self.cluster_local_commands_total.load(Ordering::Relaxed),
         }
     }
 }
