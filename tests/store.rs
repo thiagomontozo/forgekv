@@ -63,13 +63,13 @@ fn lazy_expiration_and_persist_are_deterministic() {
 
 #[test]
 fn shard_selection_is_stable() {
-    let store = store();
+    let first_store = store();
     let second_store = store();
     assert_eq!(
-        store.shard_index(b"same-key"),
+        first_store.shard_index(b"same-key"),
         second_store.shard_index(b"same-key")
     );
-    assert!(store.shard_index(b"key") < store.shard_count());
+    assert!(first_store.shard_index(b"key") < first_store.shard_count());
 }
 
 #[test]

@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -22,7 +22,7 @@ jobs:
         run: cargo bench --bench store
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: criterion-report
           path: target/criterion
