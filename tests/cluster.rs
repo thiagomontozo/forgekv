@@ -120,9 +120,9 @@ async fn client_rejects_redirect_loop() -> Result<(), Box<dyn Error>> {
     let redirect_address = address.clone();
     let responder = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await?;
-        read_frame(&mut stream, limits()).await?.ok_or_else(|| {
-            forgekv::error::ProtocolError::InvalidPayload("client closed before request")
-        })?;
+        read_frame(&mut stream, limits()).await?.ok_or(
+            forgekv::error::ProtocolError::InvalidPayload("client closed before request"),
+        )?;
         let response = Response::Redirect(redirect_address).into_frame()?;
         write_frame(&mut stream, &response, limits()).await
     });
