@@ -1,0 +1,48 @@
+services:
+  forgekv-leader:
+    build:
+      context: .
+    image: forgekv:0.3.0
+    restart: unless-stopped
+    environment:
+      FORGEKV_HOST: 0.0.0.0
+      FORGEKV_PORT: 6380
+      FORGEKV_DATA_DIR: /data
+      FORGEKV_ROLE: leader
+      FORGEKV_REPLICATION_HOST: 0.0.0.0
+      FORGEKV_REPLICATION_PORT: 6381
+      FORGEKV_FSYNC: everysec
+      FORGEKV_METRICS_HOST: 0.0.0.0
+      RUST_LOG: info
+    ports:
+      - "6380:6380"
+      - "6381:6381"
+      - "9090:9090"
+    volumes:
+      - forgekv-leader-data:/data
+    stop_grace_period: 15s
+
+  forgekv-follower:
+    image: forgekv:0.3.0
+    restart: unless-stopped
+    depends_on:
+      - forgekv-leader
+    environment:
+      FORGEKV_HOST: 0.0.0.0
+      FORGEKV_PORT: 6380
+      FORGEKV_DATA_DIR: /data
+      FORGEKV_ROLE: follower
+      FORGEKV_LEADER_ADDRESS: forgekv-leader:6381
+      FORGEKV_FSYNC: everysec
+      FORGEKV_METRICS_HOST: 0.0.0.0
+      RUST_LOG: info
+    ports:
+      - "6382:6380"
+      - "9091:9090"
+    volumes:
+      - forgekv-follower-data:/data
+    stop_grace_period: 15s
+
+volumes:
+  forgekv-leader-data:
+  forgekv-follower-data:

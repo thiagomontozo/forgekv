@@ -91,7 +91,7 @@ repeat field_count times:
     u8  value[value_length]     # UTF-8
 ```
 
-Fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, and `fsync`. Clients must ignore unknown fields for forward compatibility.
+Fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, `fsync`, and `replication_role`. Clients must ignore unknown fields for forward compatibility.
 
 ### STATS metric map
 
@@ -103,7 +103,7 @@ repeat field_count times:
     u64 value
 ```
 
-The base fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`. v0.2 additionally reports `connections_rejected_total`, `snapshots_created_total`, `wal_compactions_total`, and `snapshot_entries_written`.
+The base fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`. v0.2 added `connections_rejected_total`, `snapshots_created_total`, `wal_compactions_total`, and `snapshot_entries_written`. v0.3 adds `replication_connections_total`, `replication_syncs_total`, `replication_full_syncs_total`, `replication_bytes_sent_total`, `replication_bytes_received_total`, `replication_errors_total`, and `replication_lag_bytes`.
 
 ## Command semantics
 
@@ -117,6 +117,9 @@ The base fields are `connections_total`, `connections_active`, `commands_total`,
 - `PERSIST` returns `1` when an expiration was removed, otherwise `0`.
 - `INFO` returns the server field map.
 - `STATS` returns the metric map.
+- A follower returns `SERVER_ERROR` for every mutating command and continues serving read commands.
+
+Leader/follower traffic does not use this client frame. It has a separate specification in [Replication](replication.md).
 
 ## Example: PING
 

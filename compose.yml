@@ -2,11 +2,12 @@ services:
   forgekv:
     build:
       context: .
-    image: forgekv:0.2.0
+    image: forgekv:0.3.0
     restart: unless-stopped
     environment:
       FORGEKV_HOST: 0.0.0.0
       FORGEKV_PORT: 6380
+      FORGEKV_ROLE: standalone
       FORGEKV_DATA_DIR: /data
       FORGEKV_SHARDS: 64
       FORGEKV_FSYNC: everysec

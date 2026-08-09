@@ -2,11 +2,11 @@
 
 High-performance persistent key-value store written in Rust.
 
-> Current status: **Experimental (v0.2.0).** ForgeKV is a systems engineering project and is not production ready.
+> Current status: **Experimental (v0.3.0).** ForgeKV is a systems engineering project and is not production ready.
 
 ## Overview
 
-ForgeKV is a persistent, concurrent key-value database built directly on Tokio, TCP, and a versioned binary protocol. It keeps the active data set in a sharded in-memory store and records every mutation in a checksummed write-ahead log (WAL) before changing memory.
+ForgeKV is a persistent, concurrent key-value database built directly on Tokio, TCP, and versioned binary protocols. It keeps the active data set in a sharded in-memory store, records every mutation in a checksummed write-ahead log (WAL), and can asynchronously replicate a leader to read-only followers.
 
 The project explores database internals, binary protocol design, bounded input processing, crash recovery, concurrent data structures, graceful shutdown, observability, and reproducible CI validation without placing a web framework or an external database at its core.
 
@@ -29,9 +29,12 @@ ForgeKV exists as a focused systems programming portfolio project. It makes the 
 - Configurable connection limit with rejection metrics
 - Ordered client pipelining over one TCP connection
 - Prometheus text metrics endpoint without a web framework
+- Leader/follower replication over a dedicated bounded TCP protocol
+- Incremental WAL transfer with generation-based snapshot fallback
+- Checksummed persistent follower progress and read-only enforcement
 - Atomic internal counters exposed by `STATS`
 - Integration tests, Criterion benchmarks, container assets, and GitHub Actions
-- Zero `unsafe` in v0.2, enforced at crate level
+- Zero `unsafe` in v0.3, enforced at crate level
 
 ## Architecture
 
@@ -44,6 +47,16 @@ flowchart LR
     Store --> S1["Shard 1"]
     Store --> SN["Shard N"]
     Router --> Metrics["Atomic metrics"]
+```
+
+Replication uses a separate TCP endpoint and never bypasses the persistence layer:
+
+```mermaid
+flowchart LR
+    Leader["Leader WAL"] -->|"complete WAL records"| Follower["Read-only follower"]
+    Snapshot["Checksummed snapshot"] -->|"generation reset"| Follower
+    Follower --> ReplicaWAL["Follower WAL"]
+    ReplicaWAL --> ReplicaStore["Follower shards"]
 ```
 
 Mutating commands are serialized through the WAL so the order on disk matches the order applied to memory:
@@ -73,6 +86,8 @@ Each request is a length-prefixed frame containing a protocol version, an opcode
 
 `SET`, `DEL`, `SETEX`, and `PERSIST` first append a checksummed record to the WAL. The mutation remains under the same ordering guard until it is applied to the selected shard. Automatic compaction writes a checksummed snapshot atomically and then resets the WAL. On restart, ForgeKV loads the snapshot before replaying valid WAL records. An incomplete WAL record at the physical end is truncated; checksum failure or structural corruption stops startup.
 
+In leader mode, followers poll a dedicated replication endpoint with the last durable leader identity, WAL generation, and byte offset. The leader returns complete WAL records when that position remains valid. A new leader identity, compaction generation, or incompatible offset triggers a checksummed full snapshot captured at the current WAL boundary without changing the leader generation. Followers synchronize their local WAL before persisting progress and reject client mutations.
+
 ## Getting Started
 
 Prerequisites for a manual development environment:
@@ -99,6 +114,20 @@ cargo run --release --bin forgekv-server
 
 The default database address is `127.0.0.1:6380`, metrics are exposed on `127.0.0.1:9090/metrics`, and persistent files use the `data` directory. Set `RUST_LOG=debug` for additional lifecycle diagnostics. User values are never written to logs.
 
+Run a leader with a replication endpoint on port `6381`:
+
+```bash
+FORGEKV_ROLE=leader FORGEKV_REPLICATION_HOST=0.0.0.0 cargo run --release --bin forgekv-server
+```
+
+Run a read-only follower after choosing separate client, metrics, and data paths:
+
+```bash
+FORGEKV_ROLE=follower FORGEKV_PORT=6382 FORGEKV_METRICS_PORT=9091 \
+FORGEKV_DATA_DIR=data-follower FORGEKV_LEADER_ADDRESS=127.0.0.1:6381 \
+cargo run --release --bin forgekv-server
+```
+
 ## CLI Usage
 
 The CLI connects through the real TCP protocol; it never calls the store directly.
@@ -122,7 +151,7 @@ CLI keys and values come from command-line UTF-8 arguments. The protocol and dat
 
 ForgeKV uses a custom binary protocol, not JSON, RESP, or HTTP. Integers are big-endian and every variable-length field carries an explicit length. The default maximum frame body is 1 MiB.
 
-The complete request, response, status, and error contract is in [Wire Protocol](docs/protocol.md).
+The complete client request/response contract is in [Wire Protocol](docs/protocol.md). The separate leader/follower transport is specified in [Replication](docs/replication.md).
 
 ## Persistence
 
@@ -152,13 +181,20 @@ See [Persistence](docs/persistence.md) for the byte layout and crash semantics.
 | `FORGEKV_METRICS_ENABLED` | `true` | Enable the Prometheus text endpoint |
 | `FORGEKV_METRICS_HOST` | `127.0.0.1` | Metrics bind host |
 | `FORGEKV_METRICS_PORT` | `9090` | Metrics bind port |
+| `FORGEKV_ROLE` | `standalone` | `standalone`, `leader`, or `follower` |
+| `FORGEKV_REPLICATION_HOST` | `127.0.0.1` | Leader replication bind host |
+| `FORGEKV_REPLICATION_PORT` | `6381` | Leader replication bind port |
+| `FORGEKV_LEADER_ADDRESS` | `127.0.0.1:6381` | Leader endpoint used by a follower |
+| `FORGEKV_REPLICATION_INTERVAL_MS` | `250` | Follower polling interval |
+| `FORGEKV_REPLICATION_MAX_BATCH_SIZE` | `4194304` | Maximum incremental response bytes, up to 64 MiB |
+| `FORGEKV_REPLICATION_MAX_SNAPSHOT_SIZE` | `268435456` | Maximum full-sync snapshot bytes, up to 1 GiB |
 | `RUST_LOG` | `info` | `tracing-subscriber` filter |
 
 Invalid settings fail startup with a descriptive error. Network frame limits remain authoritative, so a configured value maximum cannot make a request exceed the frame maximum.
 
 ## Testing
 
-The repository contains deterministic unit and integration coverage for configuration, protocol framing, command parsing, sharding, concurrency, TTL, WAL encoding, checksums, replay, restarts, truncated tails, corruption, TCP commands, multiple clients, and malformed input.
+The repository contains deterministic unit and integration coverage for configuration, protocol framing, command parsing, sharding, concurrency, TTL, WAL encoding, checksums, replay, restarts, truncated tails, corruption, TCP commands, multiple clients, malformed input, full replication sync, incremental replication, generation changes, and follower read-only behavior.
 
 ```bash
 cargo test --all
@@ -183,11 +219,11 @@ On Windows, `scripts/benchmark.ps1` runs the same suite. The manual `Benchmarks`
 The multi-stage image builds both binaries and runs the server as an unprivileged user with `/data` as its persistent directory.
 
 ```bash
-docker build -t forgekv:0.2.0 .
+docker build -t forgekv:0.3.0 .
 docker compose up -d
 ```
 
-Ports `6380` and `9090` are published and the Compose volume `forgekv-data` retains the WAL and snapshot.
+Ports `6380` and `9090` are published and the Compose volume `forgekv-data` retains database state. `docker compose -f compose.replication.yml up -d` starts an example leader and follower with distinct volumes and ports.
 
 ## Metrics
 
@@ -208,6 +244,7 @@ src/
   command/      command model and payload parser
   persistence/  WAL, snapshots, compaction, and recovery
   protocol/     binary frames and async codec
+  replication/  leader/follower protocol, state, and lifecycle
   server/       accept loop, connection lifecycle, routing, metrics export
   store/        entries, shards, TTL, deterministic hashing
   config.rs     validated environment configuration
@@ -225,10 +262,14 @@ scripts/        manual PowerShell smoke and benchmark helpers
 - [ADR 0003: Sharded store](docs/decisions/0003-sharded-store.md)
 - [ADR 0004: Write-ahead log](docs/decisions/0004-write-ahead-log.md)
 - [ADR 0005: Snapshots and compaction](docs/decisions/0005-snapshots-and-compaction.md)
+- [ADR 0006: Leader/follower replication](docs/decisions/0006-leader-follower-replication.md)
 
 ## Limitations
 
-- Single-node only; no replication or consensus
+- Replication supports one writable leader and asynchronous read-only followers; there is no consensus
+- No leader election, quorum writes, automatic promotion, fencing, or split-brain protection
+- Follower reads may be stale by at least the configured polling interval
+- Full synchronization materializes one bounded snapshot in memory on each side
 - Mutations share one WAL ordering guard
 - No authentication, authorization, or TLS termination
 - No transaction groups or compare-and-swap operations
@@ -238,11 +279,6 @@ scripts/        manual PowerShell smoke and benchmark helpers
 - Pipelining preserves order but does not include request identifiers or out-of-order responses
 
 ## Roadmap
-
-### v0.3
-
-- Leader/follower replication
-- Incremental replication
 
 ### v0.4
 

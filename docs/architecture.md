@@ -2,7 +2,7 @@
 
 ## Scope
 
-ForgeKV v0.2 is a single-node persistent key-value database. It owns its TCP protocol, in-memory data structures, expiration, persistence, and recovery. It deliberately excludes HTTP CRUD, external databases, Redis compatibility, clustering, and advanced authentication.
+ForgeKV v0.3 is a persistent key-value database with a standalone mode and asynchronous leader/read-only-follower replication. It owns its TCP protocols, in-memory data structures, expiration, persistence, recovery, and replication state. It deliberately excludes HTTP CRUD, external databases, Redis compatibility, consensus, automatic failover, clustering, and advanced authentication.
 
 ## Networking and async runtime
 
@@ -27,6 +27,8 @@ The router distinguishes read-only and mutating commands:
 The WAL guard is intentionally held across the asynchronous append and the following short in-memory mutation. This serializes mutations, but ensures another task cannot persist and apply a later command before the earlier command reaches memory. No store shard lock is held across an `.await`.
 
 Clients may pipeline up to 1,024 commands. The client writes all frames before reading responses; the server executes them sequentially per connection, preserving response order without request identifiers.
+
+Followers reject `SET`, `DEL`, `SETEX`, and `PERSIST` before they reach the WAL. Reads remain available while continuous replication reconnects, so they may be stale. A follower performs one initial synchronization before its client listener is bound.
 
 ## Store and sharding
 
@@ -62,11 +64,17 @@ A short final record is treated as a crash tail and truncated to the last valid 
 
 See [Persistence](persistence.md) for the exact format.
 
+## Replication
+
+Leaders expose a dedicated bounded TCP endpoint. A follower identifies the last durable leader node, WAL generation, and byte offset. When these match, the leader reads only complete validated records up to the configured batch limit. The follower validates, appends, applies, synchronizes, and then persists its checksummed progress.
+
+Compaction increments persistent WAL generation. A new follower, different node identity, generation mismatch, or incompatible offset forces a full checksummed snapshot. Snapshot capture and WAL reads take the same mutation ordering guard, so every response represents a coherent boundary. The full wire contract is in [Replication](replication.md).
+
 ## Metrics and logging
 
 Hot-path counters use relaxed atomics because they are observational and do not establish correctness ordering. `STATS` returns a snapshot of all counters. `INFO` derives version, uptime, live key count, shard count, actual listening address, and fsync mode from active state.
 
-`tracing` records startup, WAL initialization and replay, connections, protocol and persistence errors, expiration, shutdown, and WAL flush. Stored values are never logged.
+`tracing` records startup, WAL initialization and replay, connections, protocol, persistence and replication errors, expiration, synchronization boundaries, shutdown, and WAL flush. Stored values are never logged.
 
 A separate bounded HTTP listener exports Prometheus text metrics. It accepts only `GET /metrics`, caps request headers at 8 KiB, limits concurrent metrics clients to 64, uses short I/O timeouts, and is not part of the database command protocol.
 
@@ -77,7 +85,7 @@ Ctrl+C sends a watch notification:
 1. the accept loop stops accepting;
 2. idle connection reads are cancelled;
 3. commands already executing finish their current lifecycle operation;
-4. expiration, periodic fsync, compaction, and metrics tasks stop;
+4. expiration, periodic fsync, compaction, metrics, and replication tasks stop;
 5. the server awaits all connection tasks;
 6. the main process flushes the WAL and synchronizes it when required by the configured policy;
 7. resources are dropped and the process exits.

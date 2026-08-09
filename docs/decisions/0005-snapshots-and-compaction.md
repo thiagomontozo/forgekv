@@ -14,4 +14,4 @@ Serialize compaction with the existing WAL mutation guard. Capture live entries,
 
 ## Consequences
 
-WAL growth and restart replay are bounded by the configured threshold. Mutations pause while the entry list is captured and the snapshot worker completes. The full data set must fit in memory twice during compaction, and snapshots remain single-node artifacts without incremental transfer.
+WAL growth and restart replay are bounded by the configured threshold. Mutations pause while the entry list is captured and the snapshot worker completes. The full data set must fit in memory twice during compaction. v0.3 also uses snapshots as the safe replication fallback when identity, generation, or offset cannot continue incrementally.

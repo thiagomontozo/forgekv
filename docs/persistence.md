@@ -2,7 +2,7 @@
 
 ## Purpose and path
 
-ForgeKV v0.2 persists mutations in `${FORGEKV_DATA_DIR}/forgekv.wal` and compacted state in `${FORGEKV_DATA_DIR}/forgekv.snapshot`. Recovery loads the snapshot first and replays the remaining WAL afterward.
+ForgeKV v0.3 persists mutations in `${FORGEKV_DATA_DIR}/forgekv.wal` and compacted state in `${FORGEKV_DATA_DIR}/forgekv.snapshot`. Recovery loads the snapshot first and replays the remaining WAL afterward. Replication metadata uses `forgekv.node`, `forgekv.generation`, and, on followers, `forgekv.replica`.
 
 ## File header
 
@@ -82,6 +82,8 @@ The 16-byte snapshot header contains ASCII `FKVS`, version `0x01`, three zero re
 
 When the WAL reaches `FORGEKV_WAL_COMPACTION_THRESHOLD_BYTES`, ForgeKV holds the mutation ordering guard, captures live entries, writes and synchronizes `forgekv.snapshot.tmp`, installs it with a recoverable backup rename, and resets the WAL to its header. A crash before WAL reset replays the older WAL over an equivalent snapshot; a crash after reset starts from the installed snapshot. A threshold of `0` disables automatic compaction.
 
+Before resetting the WAL, v0.3 atomically advances a persistent positive generation. Followers present this generation with their next required byte offset. Generation mismatch causes a full snapshot instead of reading a potentially unrelated byte position.
+
 ## Recovery
 
 Before accepting clients ForgeKV:
@@ -117,4 +119,5 @@ Any of these stops recovery with an explicit error. ForgeKV does not scan for th
 - `always` asks the OS to synchronize each record; `everysec` synchronizes dirty data periodically; `none` intentionally does not request disk synchronization.
 - Compaction is size-triggered and snapshots contain the complete live data set.
 - There is no incremental snapshot, group commit, encryption, or authenticated checksum.
+- Replicated WAL batches are forced to disk before follower progress is advanced, independent of the follower's normal fsync policy.
 - CRC32 detects accidental corruption; it is not a cryptographic integrity mechanism.

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Add asynchronous leader/follower replication on a dedicated binary TCP protocol.
+- Add incremental WAL transfer with identity and generation validation.
+- Add checksummed full-snapshot fallback and persistent follower offsets.
+- Make followers read-only and synchronize them before accepting client traffic.
+- Add replication metrics, integration tests, container examples, documentation, and an ADR.
+
 ## 0.2.0
 
 - Add checksummed snapshots and size-triggered WAL compaction.
