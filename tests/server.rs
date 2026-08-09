@@ -3,7 +3,7 @@ use std::{error::Error, io, sync::Arc, time::Duration};
 use bytes::Bytes;
 use forgekv::{
     client::Client,
-    config::{Config, FsyncMode},
+    config::{Config, FsyncMode, ReplicationRole},
     metrics::Metrics,
     persistence::Database,
     protocol::{read_frame, ProtocolLimits, Response},
@@ -28,10 +28,17 @@ struct RunningServer {
 
 impl RunningServer {
     async fn start() -> Result<Self, Box<dyn Error>> {
-        Self::start_with_limit(1_024).await
+        Self::start_with_options(1_024, ReplicationRole::Standalone).await
     }
 
     async fn start_with_limit(max_connections: usize) -> Result<Self, Box<dyn Error>> {
+        Self::start_with_options(max_connections, ReplicationRole::Standalone).await
+    }
+
+    async fn start_with_options(
+        max_connections: usize,
+        replication_role: ReplicationRole,
+    ) -> Result<Self, Box<dyn Error>> {
         let data = tempfile::tempdir()?;
         let config = Config {
             host: "127.0.0.1".to_owned(),
@@ -45,6 +52,7 @@ impl RunningServer {
             fsync: FsyncMode::None,
             max_connections,
             metrics_enabled: false,
+            replication_role,
             ..Config::default()
         };
         let metrics = Arc::new(Metrics::default());
@@ -81,6 +89,19 @@ impl RunningServer {
         timeout(Duration::from_secs(3), self.task).await???;
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn follower_rejects_mutating_client_commands() -> Result<(), Box<dyn Error>> {
+    let server = RunningServer::start_with_options(1_024, ReplicationRole::Follower).await?;
+    let mut client = Client::connect(&server.address, server.limits()).await?;
+    assert_eq!(
+        client
+            .set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
+            .await?,
+        Response::ServerError("follower is read-only; send mutations to the leader".to_owned())
+    );
+    server.stop().await
 }
 
 #[tokio::test]
