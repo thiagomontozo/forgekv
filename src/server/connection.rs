@@ -79,18 +79,7 @@ pub(super) async fn handle_connection(
             }
             context.metrics.cluster_local_command();
         }
-        let response = match execute(
-            command,
-            &context.database,
-            &context.metrics,
-            context.started_at,
-            &context.listening_address,
-            context.fsync,
-            context.replication_role,
-            context.cluster.as_deref(),
-        )
-        .await
-        {
+        let response = match execute(command, &context).await {
             Ok(response) => response,
             Err(error) => {
                 error!(%peer, %error, "command failed");
@@ -106,14 +95,15 @@ pub(super) async fn handle_connection(
 
 async fn execute(
     command: Command,
-    database: &Database,
-    metrics: &Metrics,
-    started_at: Instant,
-    listening_address: &str,
-    fsync: FsyncMode,
-    replication_role: ReplicationRole,
-    cluster: Option<&ClusterTopology>,
+    context: &ConnectionContext,
 ) -> Result<Response, ForgeError> {
+    let database = &context.database;
+    let metrics = &context.metrics;
+    let started_at = context.started_at;
+    let listening_address = &context.listening_address;
+    let fsync = context.fsync;
+    let replication_role = context.replication_role;
+    let cluster = context.cluster.as_deref();
     if replication_role == ReplicationRole::Follower
         && matches!(
             &command,
