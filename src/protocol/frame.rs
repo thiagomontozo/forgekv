@@ -172,8 +172,8 @@ impl Response {
             )),
             Self::Pong => Ok(Frame::response(StatusCode::Pong, Bytes::new())),
             Self::Value(value) => {
-                let length = u32::try_from(value.len())
-                    .map_err(|_| ProtocolError::IntegerOverflow)?;
+                let length =
+                    u32::try_from(value.len()).map_err(|_| ProtocolError::IntegerOverflow)?;
                 let capacity = 4usize
                     .checked_add(value.len())
                     .ok_or(ProtocolError::IntegerOverflow)?;

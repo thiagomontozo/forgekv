@@ -167,9 +167,7 @@ impl ShardedStore {
                 Some(entry) => {
                     return Ok(match entry.expires_at() {
                         Some(expires_at) => TtlState::ExpiresIn(
-                            expires_at
-                                .duration_since(now)
-                                .unwrap_or(Duration::ZERO),
+                            expires_at.duration_since(now).unwrap_or(Duration::ZERO),
                         ),
                         None => TtlState::Persistent,
                     })

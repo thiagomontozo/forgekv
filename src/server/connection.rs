@@ -136,10 +136,7 @@ async fn execute(
                 "uptime_seconds".to_owned(),
                 started_at.elapsed().as_secs().to_string(),
             ),
-            (
-                "keys".to_owned(),
-                database.store().len()?.to_string(),
-            ),
+            ("keys".to_owned(), database.store().len()?.to_string()),
             (
                 "shards".to_owned(),
                 database.store().shard_count().to_string(),

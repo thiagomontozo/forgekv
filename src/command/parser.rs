@@ -10,17 +10,30 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
     Ping,
-    Set { key: Bytes, value: Bytes },
-    Get { key: Bytes },
-    Del { key: Bytes },
-    Exists { key: Bytes },
+    Set {
+        key: Bytes,
+        value: Bytes,
+    },
+    Get {
+        key: Bytes,
+    },
+    Del {
+        key: Bytes,
+    },
+    Exists {
+        key: Bytes,
+    },
     SetEx {
         key: Bytes,
         ttl: Duration,
         value: Bytes,
     },
-    Ttl { key: Bytes },
-    Persist { key: Bytes },
+    Ttl {
+        key: Bytes,
+    },
+    Persist {
+        key: Bytes,
+    },
     Info,
     Stats,
 }
@@ -34,8 +47,8 @@ impl Command {
             Self::Del { key } => (Opcode::Del, encode_key(&key)?),
             Self::Exists { key } => (Opcode::Exists, encode_key(&key)?),
             Self::SetEx { key, ttl, value } => {
-                let millis = u64::try_from(ttl.as_millis())
-                    .map_err(|_| ProtocolError::IntegerOverflow)?;
+                let millis =
+                    u64::try_from(ttl.as_millis()).map_err(|_| ProtocolError::IntegerOverflow)?;
                 let key_length =
                     u32::try_from(key.len()).map_err(|_| ProtocolError::IntegerOverflow)?;
                 let value_length =
@@ -91,7 +104,9 @@ pub fn parse_command(frame: &Frame, limits: ProtocolLimits) -> Result<Command, P
             let key = cursor.key()?;
             let ttl_ms = cursor.u64()?;
             if ttl_ms == 0 {
-                return Err(ProtocolError::InvalidPayload("TTL must be greater than zero"));
+                return Err(ProtocolError::InvalidPayload(
+                    "TTL must be greater than zero",
+                ));
             }
             let value = cursor.value()?;
             cursor.finish()?;

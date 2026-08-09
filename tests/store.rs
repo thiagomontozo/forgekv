@@ -1,7 +1,10 @@
 use std::{sync::Arc, thread, time::SystemTime};
 
 use bytes::Bytes;
-use forgekv::{metrics::Metrics, store::{ShardedStore, TtlState}};
+use forgekv::{
+    metrics::Metrics,
+    store::{ShardedStore, TtlState},
+};
 
 fn store() -> ShardedStore {
     ShardedStore::new(16, Arc::new(Metrics::default())).expect("valid shard count")

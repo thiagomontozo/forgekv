@@ -30,11 +30,8 @@ fn store() -> Arc<ShardedStore> {
 
 #[test]
 fn record_encoding_validates_checksum() {
-    let record = WalRecord::set(
-        Bytes::from_static(b"key"),
-        Bytes::from_static(b"value"),
-    )
-    .expect("record should construct");
+    let record = WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
+        .expect("record should construct");
     let encoded = record.encode().expect("record should encode");
     assert_eq!(
         WalRecord::decode(&encoded, limits(), 8).expect("record should decode"),
@@ -108,8 +105,7 @@ async fn restart_rebuilds_the_memory_store() {
         .await
         .expect("WAL should open");
     wal.append(
-        &WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
-            .expect("record"),
+        &WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value")).expect("record"),
     )
     .await
     .expect("append should work");
@@ -132,13 +128,10 @@ fn truncated_final_record_is_removed_safely() {
     let directory = tempdir().expect("temp directory should be created");
     let path = directory.path().join("forgekv.wal");
     prepare_wal(&path, FsyncMode::None).expect("WAL should initialize");
-    let record = WalRecord::set(
-        Bytes::from_static(b"key"),
-        Bytes::from_static(b"value"),
-    )
-    .expect("record")
-    .encode()
-    .expect("encode");
+    let record = WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
+        .expect("record")
+        .encode()
+        .expect("encode");
     let mut file = OpenOptions::new()
         .append(true)
         .open(&path)

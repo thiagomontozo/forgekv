@@ -198,10 +198,7 @@ pub fn validate_lengths(
     value_length: usize,
     limits: ProtocolLimits,
 ) -> Result<(), PersistenceError> {
-    if key_length == 0
-        || key_length > limits.max_key_size
-        || value_length > limits.max_value_size
-    {
+    if key_length == 0 || key_length > limits.max_key_size || value_length > limits.max_value_size {
         return Err(PersistenceError::InvalidRecordLength);
     }
     key_length
@@ -226,9 +223,7 @@ fn validate_semantics(
     }
     let valid = match record_type {
         RecordType::Set => expiration == NO_EXPIRATION,
-        RecordType::Del | RecordType::Persist => {
-            value.is_empty() && expiration == NO_EXPIRATION
-        }
+        RecordType::Del | RecordType::Persist => value.is_empty() && expiration == NO_EXPIRATION,
         RecordType::SetEx => expiration != NO_EXPIRATION,
     };
     if valid {

@@ -34,8 +34,14 @@ fn commands_encode_and_decode() {
         Command::Stats,
     ];
     for expected in commands {
-        let frame = expected.clone().into_frame().expect("command should encode");
-        assert_eq!(parse_command(&frame, limits()).expect("frame should parse"), expected);
+        let frame = expected
+            .clone()
+            .into_frame()
+            .expect("command should encode");
+        assert_eq!(
+            parse_command(&frame, limits()).expect("frame should parse"),
+            expected
+        );
     }
 }
 

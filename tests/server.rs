@@ -42,8 +42,7 @@ impl RunningServer {
         };
         let metrics = Arc::new(Metrics::default());
         let store = Arc::new(ShardedStore::new(config.shards, Arc::clone(&metrics))?);
-        let (database, _) =
-            Database::open(&config, store, Arc::clone(&metrics)).await?;
+        let (database, _) = Database::open(&config, store, Arc::clone(&metrics)).await?;
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?.to_string();
         let server = Arc::new(Server::new(
@@ -109,7 +108,9 @@ async fn multiple_clients_are_processed_concurrently() -> Result<(), Box<dyn Err
         tasks.push(tokio::spawn(async move {
             let mut client = Client::connect(&address, limits).await?;
             let key = Bytes::from(format!("key:{index}"));
-            client.set(key.clone(), Bytes::from_static(b"value")).await?;
+            client
+                .set(key.clone(), Bytes::from_static(b"value"))
+                .await?;
             client.get(key).await
         }));
     }

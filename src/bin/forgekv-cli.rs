@@ -14,7 +14,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<String> = env::args().skip(1).collect();
     let command = parse_arguments(&arguments)
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))?;
-    let mut client = Client::connect(&config.listen_address(), ProtocolLimits::from(&config)).await?;
+    let mut client =
+        Client::connect(&config.listen_address(), ProtocolLimits::from(&config)).await?;
     let response = client.execute(command).await?;
     print_response(response);
     Ok(())

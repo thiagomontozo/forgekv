@@ -135,8 +135,7 @@ impl Database {
         let record = WalRecord::set_ex(key.clone(), value.clone(), expires_at)?;
         let mut wal = self.wal.lock().await;
         wal.append(&record).await?;
-        self.store
-            .set_with_expiry(key, value, Some(expires_at))?;
+        self.store.set_with_expiry(key, value, Some(expires_at))?;
         self.metrics.set();
         Ok(())
     }

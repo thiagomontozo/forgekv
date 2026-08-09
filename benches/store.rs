@@ -7,7 +7,10 @@ use forgekv::{metrics::Metrics, store::ShardedStore};
 fn store_benchmarks(criterion: &mut Criterion) {
     let store = ShardedStore::new(64, Arc::new(Metrics::default())).expect("valid shards");
     store
-        .set(Bytes::from_static(b"existing"), Bytes::from_static(b"value"))
+        .set(
+            Bytes::from_static(b"existing"),
+            Bytes::from_static(b"value"),
+        )
         .expect("setup should work");
 
     criterion.bench_function("in_memory_set", |bench| {

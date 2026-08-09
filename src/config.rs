@@ -75,11 +75,7 @@ impl Config {
                 .unwrap_or_else(|| defaults.data_dir.to_string_lossy().into_owned()),
         );
         if data_dir.as_os_str().is_empty() {
-            return Err(invalid(
-                "FORGEKV_DATA_DIR",
-                "",
-                "non-empty directory path",
-            ));
+            return Err(invalid("FORGEKV_DATA_DIR", "", "non-empty directory path"));
         }
 
         let shards: usize = parse_or("FORGEKV_SHARDS", defaults.shards, &lookup)?;
@@ -91,21 +87,9 @@ impl Config {
             ));
         }
 
-        let max_frame_size = parse_or(
-            "FORGEKV_MAX_FRAME_SIZE",
-            defaults.max_frame_size,
-            &lookup,
-        )?;
-        let max_key_size = parse_or(
-            "FORGEKV_MAX_KEY_SIZE",
-            defaults.max_key_size,
-            &lookup,
-        )?;
-        let max_value_size = parse_or(
-            "FORGEKV_MAX_VALUE_SIZE",
-            defaults.max_value_size,
-            &lookup,
-        )?;
+        let max_frame_size = parse_or("FORGEKV_MAX_FRAME_SIZE", defaults.max_frame_size, &lookup)?;
+        let max_key_size = parse_or("FORGEKV_MAX_KEY_SIZE", defaults.max_key_size, &lookup)?;
+        let max_value_size = parse_or("FORGEKV_MAX_VALUE_SIZE", defaults.max_value_size, &lookup)?;
         if max_frame_size < 2 {
             return Err(invalid(
                 "FORGEKV_MAX_FRAME_SIZE",
@@ -127,11 +111,7 @@ impl Config {
             ));
         }
 
-        let expiration_ms: u64 = parse_or(
-            "FORGEKV_EXPIRATION_INTERVAL_MS",
-            1_000u64,
-            &lookup,
-        )?;
+        let expiration_ms: u64 = parse_or("FORGEKV_EXPIRATION_INTERVAL_MS", 1_000u64, &lookup)?;
         if expiration_ms == 0 {
             return Err(invalid(
                 "FORGEKV_EXPIRATION_INTERVAL_MS",
@@ -188,11 +168,7 @@ where
     }
 }
 
-fn invalid(
-    name: &'static str,
-    value: impl Into<String>,
-    expected: &'static str,
-) -> ConfigError {
+fn invalid(name: &'static str, value: impl Into<String>, expected: &'static str) -> ConfigError {
     ConfigError::InvalidValue {
         name,
         value: value.into(),

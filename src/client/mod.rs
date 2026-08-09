@@ -16,10 +16,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(
-        address: &str,
-        limits: ProtocolLimits,
-    ) -> Result<Self, ProtocolError> {
+    pub async fn connect(address: &str, limits: ProtocolLimits) -> Result<Self, ProtocolError> {
         let stream = TcpStream::connect(address).await?;
         Ok(Self { stream, limits })
     }
@@ -27,11 +24,9 @@ impl Client {
     pub async fn execute(&mut self, command: Command) -> Result<Response, ProtocolError> {
         let frame = command.into_frame()?;
         write_frame(&mut self.stream, &frame, self.limits).await?;
-        let response = read_frame(&mut self.stream, self.limits)
-            .await?
-            .ok_or(ProtocolError::InvalidPayload(
-                "server closed the connection before responding",
-            ))?;
+        let response = read_frame(&mut self.stream, self.limits).await?.ok_or(
+            ProtocolError::InvalidPayload("server closed the connection before responding"),
+        )?;
         Response::from_frame(response)
     }
 

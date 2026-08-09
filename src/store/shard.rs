@@ -13,17 +13,13 @@ pub(super) struct Shard {
 }
 
 impl Shard {
-    pub(super) fn read(
-        &self,
-    ) -> Result<RwLockReadGuard<'_, HashMap<Vec<u8>, Entry>>, StoreError> {
+    pub(super) fn read(&self) -> Result<RwLockReadGuard<'_, HashMap<Vec<u8>, Entry>>, StoreError> {
         self.entries.read().map_err(|_| StoreError::LockPoisoned)
     }
 
     pub(super) fn write(
         &self,
     ) -> Result<RwLockWriteGuard<'_, HashMap<Vec<u8>, Entry>>, StoreError> {
-        self.entries
-            .write()
-            .map_err(|_| StoreError::LockPoisoned)
+        self.entries.write().map_err(|_| StoreError::LockPoisoned)
     }
 }
