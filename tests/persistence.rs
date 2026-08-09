@@ -231,13 +231,9 @@ async fn everysec_flushes_dirty_wal_on_tick() {
     let directory = tempdir().expect("temp directory should be created");
     let path = directory.path().join("forgekv.wal");
     prepare_wal(&path, FsyncMode::EverySecond).expect("WAL should initialize");
-    let mut wal = Wal::open(
-        &path,
-        FsyncMode::EverySecond,
-        Arc::new(Metrics::default()),
-    )
-    .await
-    .expect("WAL should open");
+    let mut wal = Wal::open(&path, FsyncMode::EverySecond, Arc::new(Metrics::default()))
+        .await
+        .expect("WAL should open");
     wal.append(
         &WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
             .expect("record should construct"),
@@ -245,7 +241,10 @@ async fn everysec_flushes_dirty_wal_on_tick() {
     .await
     .expect("append should work");
     assert!(wal.sync_if_needed().await.expect("sync should work"));
-    assert!(!wal.sync_if_needed().await.expect("clean WAL should not sync"));
+    assert!(!wal
+        .sync_if_needed()
+        .await
+        .expect("clean WAL should not sync"));
 }
 
 #[tokio::test]
@@ -260,9 +259,8 @@ async fn compaction_restarts_from_snapshot_and_new_wal() {
         ..forgekv::config::Config::default()
     };
     let metrics = Arc::new(Metrics::default());
-    let active_store = Arc::new(
-        ShardedStore::new(config.shards, Arc::clone(&metrics)).expect("valid shards"),
-    );
+    let active_store =
+        Arc::new(ShardedStore::new(config.shards, Arc::clone(&metrics)).expect("valid shards"));
     let (database, _) = Database::open(&config, active_store, metrics)
         .await
         .expect("database should open");

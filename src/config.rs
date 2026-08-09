@@ -146,11 +146,8 @@ impl Config {
             }
         };
 
-        let max_connections = parse_or(
-            "FORGEKV_MAX_CONNECTIONS",
-            defaults.max_connections,
-            &lookup,
-        )?;
+        let max_connections =
+            parse_or("FORGEKV_MAX_CONNECTIONS", defaults.max_connections, &lookup)?;
         if !(1..=1_000_000).contains(&max_connections) {
             return Err(invalid(
                 "FORGEKV_MAX_CONNECTIONS",
@@ -164,9 +161,9 @@ impl Config {
             &lookup,
         )?;
         let metrics_enabled = match lookup("FORGEKV_METRICS_ENABLED") {
-            Some(value) => value.parse::<bool>().map_err(|_| {
-                invalid("FORGEKV_METRICS_ENABLED", value, "true or false")
-            })?,
+            Some(value) => value
+                .parse::<bool>()
+                .map_err(|_| invalid("FORGEKV_METRICS_ENABLED", value, "true or false"))?,
             None => defaults.metrics_enabled,
         };
         let metrics_host = lookup("FORGEKV_METRICS_HOST").unwrap_or(defaults.metrics_host);
@@ -179,11 +176,7 @@ impl Config {
         }
         let metrics_port = parse_or("FORGEKV_METRICS_PORT", defaults.metrics_port, &lookup)?;
         if metrics_enabled && metrics_port == 0 {
-            return Err(invalid(
-                "FORGEKV_METRICS_PORT",
-                "0",
-                "port in 1..=65535",
-            ));
+            return Err(invalid("FORGEKV_METRICS_PORT", "0", "port in 1..=65535"));
         }
 
         Ok(Self {

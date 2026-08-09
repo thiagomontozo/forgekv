@@ -64,7 +64,9 @@ async fn serve_metrics(mut stream: TcpStream, metrics: Arc<Metrics>) -> Result<(
     let mut request = vec![0u8; MAX_HTTP_HEADER_SIZE];
     let bytes_read = timeout(Duration::from_secs(2), stream.read(&mut request))
         .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "metrics read timed out"))??;
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::TimedOut, "metrics read timed out")
+        })??;
     let is_metrics = request[..bytes_read].starts_with(b"GET /metrics HTTP/1.");
     let (status, body) = if is_metrics {
         ("200 OK", render_prometheus(&metrics))
@@ -75,31 +77,74 @@ async fn serve_metrics(mut stream: TcpStream, metrics: Arc<Metrics>) -> Result<(
         "HTTP/1.1 {status}\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    timeout(Duration::from_secs(2), stream.write_all(response.as_bytes()))
-        .await
-        .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "metrics write timed out"))??;
+    timeout(
+        Duration::from_secs(2),
+        stream.write_all(response.as_bytes()),
+    )
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "metrics write timed out"))??;
     Ok(())
 }
 
 pub(crate) fn render_prometheus(metrics: &Metrics) -> String {
     let snapshot = metrics.snapshot();
     let values = [
-        ("forgekv_connections_total", "counter", snapshot.connections_total),
-        ("forgekv_connections_active", "gauge", snapshot.connections_active),
-        ("forgekv_connections_rejected_total", "counter", snapshot.connections_rejected_total),
+        (
+            "forgekv_connections_total",
+            "counter",
+            snapshot.connections_total,
+        ),
+        (
+            "forgekv_connections_active",
+            "gauge",
+            snapshot.connections_active,
+        ),
+        (
+            "forgekv_connections_rejected_total",
+            "counter",
+            snapshot.connections_rejected_total,
+        ),
         ("forgekv_commands_total", "counter", snapshot.commands_total),
         ("forgekv_gets_total", "counter", snapshot.gets_total),
         ("forgekv_sets_total", "counter", snapshot.sets_total),
         ("forgekv_deletes_total", "counter", snapshot.deletes_total),
         ("forgekv_hits_total", "counter", snapshot.hits_total),
         ("forgekv_misses_total", "counter", snapshot.misses_total),
-        ("forgekv_expired_keys_total", "counter", snapshot.expired_keys_total),
-        ("forgekv_protocol_errors_total", "counter", snapshot.protocol_errors_total),
-        ("forgekv_wal_records_written", "counter", snapshot.wal_records_written),
-        ("forgekv_wal_bytes_written", "counter", snapshot.wal_bytes_written),
-        ("forgekv_snapshots_created_total", "counter", snapshot.snapshots_created_total),
-        ("forgekv_wal_compactions_total", "counter", snapshot.wal_compactions_total),
-        ("forgekv_snapshot_entries_written", "counter", snapshot.snapshot_entries_written),
+        (
+            "forgekv_expired_keys_total",
+            "counter",
+            snapshot.expired_keys_total,
+        ),
+        (
+            "forgekv_protocol_errors_total",
+            "counter",
+            snapshot.protocol_errors_total,
+        ),
+        (
+            "forgekv_wal_records_written",
+            "counter",
+            snapshot.wal_records_written,
+        ),
+        (
+            "forgekv_wal_bytes_written",
+            "counter",
+            snapshot.wal_bytes_written,
+        ),
+        (
+            "forgekv_snapshots_created_total",
+            "counter",
+            snapshot.snapshots_created_total,
+        ),
+        (
+            "forgekv_wal_compactions_total",
+            "counter",
+            snapshot.wal_compactions_total,
+        ),
+        (
+            "forgekv_snapshot_entries_written",
+            "counter",
+            snapshot.snapshot_entries_written,
+        ),
     ];
     let mut output = String::new();
     for (name, metric_type, value) in values {

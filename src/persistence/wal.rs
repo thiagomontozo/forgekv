@@ -24,8 +24,8 @@ use crate::{
 use super::{
     load_snapshot,
     record::{
-    validate_lengths, RecordType, WalRecord, RECORD_FIXED_AFTER_MAGIC, RECORD_FIXED_TOTAL,
-    RECORD_MAGIC, WAL_HEADER,
+        validate_lengths, RecordType, WalRecord, RECORD_FIXED_AFTER_MAGIC, RECORD_FIXED_TOTAL,
+        RECORD_MAGIC, WAL_HEADER,
     },
     write_snapshot_atomic,
 };

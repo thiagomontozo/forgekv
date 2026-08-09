@@ -39,13 +39,7 @@ fn store_benchmarks(criterion: &mut Criterion) {
             .expect("snapshot setup should work");
     }
     criterion.bench_function("snapshot_1000_entries", |bench| {
-        bench.iter(|| {
-            black_box(
-                store
-                    .snapshot_entries()
-                    .expect("snapshot should work"),
-            )
-        });
+        bench.iter(|| black_box(store.snapshot_entries().expect("snapshot should work")));
     });
 }
 

@@ -83,10 +83,7 @@ pub fn load_snapshot(
     let mut file = File::open(path)?;
     let mut header = [0u8; SNAPSHOT_HEADER_SIZE];
     read_exact_snapshot(&mut file, &mut header, 0, "truncated snapshot header")?;
-    if header[..4] != SNAPSHOT_MAGIC
-        || header[4] != SNAPSHOT_VERSION
-        || header[5..8] != [0, 0, 0]
-    {
+    if header[..4] != SNAPSHOT_MAGIC || header[4] != SNAPSHOT_VERSION || header[5..8] != [0, 0, 0] {
         return Err(PersistenceError::InvalidSnapshotHeader);
     }
     let entry_count = u64::from_be_bytes(
@@ -97,7 +94,10 @@ pub fn load_snapshot(
     let mut report = SnapshotReport::default();
     for index in 0..entry_count {
         let entry = read_entry(&mut file, index, limits)?;
-        if entry.expires_at.is_some_and(|expires_at| expires_at <= SystemTime::now()) {
+        if entry
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= SystemTime::now())
+        {
             report.expired_entries_skipped = report.expired_entries_skipped.saturating_add(1);
         } else {
             store.set_with_expiry(entry.key, entry.value, entry.expires_at)?;
@@ -164,11 +164,11 @@ fn read_entry(
             .try_into()
             .map_err(|_| snapshot_error(index, "invalid value length"))?,
     ) as usize;
-    if key_length == 0
-        || key_length > limits.max_key_size
-        || value_length > limits.max_value_size
-    {
-        return Err(snapshot_error(index, "entry length exceeds configured limits"));
+    if key_length == 0 || key_length > limits.max_key_size || value_length > limits.max_value_size {
+        return Err(snapshot_error(
+            index,
+            "entry length exceeds configured limits",
+        ));
     }
     let variable_length = key_length
         .checked_add(value_length)
