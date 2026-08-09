@@ -52,6 +52,7 @@ pub enum StatusCode {
     Integer = 0x06,
     Info = 0x07,
     Stats = 0x08,
+    Redirect = 0x09,
 }
 
 impl TryFrom<u8> for StatusCode {
@@ -68,6 +69,7 @@ impl TryFrom<u8> for StatusCode {
             0x06 => Ok(Self::Integer),
             0x07 => Ok(Self::Info),
             0x08 => Ok(Self::Stats),
+            0x09 => Ok(Self::Redirect),
             _ => Err(ProtocolError::InvalidOpcode(value)),
         }
     }
@@ -155,6 +157,7 @@ pub enum Response {
     Integer(i64),
     Info(Vec<(String, String)>),
     Stats(Vec<(String, u64)>),
+    Redirect(String),
 }
 
 impl Response {
@@ -195,6 +198,10 @@ impl Response {
                 StatusCode::Stats,
                 encode_metric_fields(fields)?,
             )),
+            Self::Redirect(address) => Ok(Frame::response(
+                StatusCode::Redirect,
+                encode_string(&address)?,
+            )),
         }
     }
 
@@ -225,6 +232,7 @@ impl Response {
             }
             StatusCode::Info => Ok(Self::Info(decode_string_fields(&frame.payload)?)),
             StatusCode::Stats => Ok(Self::Stats(decode_metric_fields(&frame.payload)?)),
+            StatusCode::Redirect => Ok(Self::Redirect(decode_string(&frame.payload)?)),
         }
     }
 }

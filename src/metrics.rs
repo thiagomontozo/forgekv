@@ -25,6 +25,8 @@ pub struct Metrics {
     replication_bytes_received_total: AtomicU64,
     replication_errors_total: AtomicU64,
     replication_lag_bytes: AtomicU64,
+    cluster_redirects_total: AtomicU64,
+    cluster_local_commands_total: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +54,8 @@ pub struct MetricsSnapshot {
     pub replication_bytes_received_total: u64,
     pub replication_errors_total: u64,
     pub replication_lag_bytes: u64,
+    pub cluster_redirects_total: u64,
+    pub cluster_local_commands_total: u64,
 }
 
 impl Metrics {
@@ -148,6 +152,15 @@ impl Metrics {
         self.replication_lag_bytes.store(bytes, Ordering::Relaxed);
     }
 
+    pub fn cluster_redirect(&self) {
+        self.cluster_redirects_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn cluster_local_command(&self) {
+        self.cluster_local_commands_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
             connections_total: self.connections_total.load(Ordering::Relaxed),
@@ -177,6 +190,10 @@ impl Metrics {
                 .load(Ordering::Relaxed),
             replication_errors_total: self.replication_errors_total.load(Ordering::Relaxed),
             replication_lag_bytes: self.replication_lag_bytes.load(Ordering::Relaxed),
+            cluster_redirects_total: self.cluster_redirects_total.load(Ordering::Relaxed),
+            cluster_local_commands_total: self
+                .cluster_local_commands_total
+                .load(Ordering::Relaxed),
         }
     }
 }

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
+pub mod cluster;
 pub mod command;
 pub mod config;
 pub mod error;

@@ -4,6 +4,7 @@ use tokio::{net::TcpStream, sync::watch};
 use tracing::{debug, error, warn};
 
 use crate::{
+    cluster::ClusterTopology,
     command::{parse_command, Command},
     config::{FsyncMode, ReplicationRole},
     error::{ForgeError, ProtocolError},
@@ -22,6 +23,7 @@ pub(super) struct ConnectionContext {
     pub(super) listening_address: String,
     pub(super) fsync: FsyncMode,
     pub(super) replication_role: ReplicationRole,
+    pub(super) cluster: Option<Arc<ClusterTopology>>,
 }
 
 pub(super) async fn handle_connection(
@@ -67,6 +69,16 @@ pub(super) async fn handle_connection(
             }
         };
         context.metrics.command();
+        if let (Some(cluster), Some(key)) = (&context.cluster, command.key()) {
+            if !cluster.is_local(key) {
+                let owner = cluster.owner(key);
+                context.metrics.cluster_redirect();
+                let response = Response::Redirect(owner.address().to_owned()).into_frame()?;
+                write_frame(&mut stream, &response, context.limits).await?;
+                continue;
+            }
+            context.metrics.cluster_local_command();
+        }
         let response = match execute(
             command,
             &context.database,
@@ -75,6 +87,7 @@ pub(super) async fn handle_connection(
             &context.listening_address,
             context.fsync,
             context.replication_role,
+            context.cluster.as_deref(),
         )
         .await
         {
@@ -99,6 +112,7 @@ async fn execute(
     listening_address: &str,
     fsync: FsyncMode,
     replication_role: ReplicationRole,
+    cluster: Option<&ClusterTopology>,
 ) -> Result<Response, ForgeError> {
     if replication_role == ReplicationRole::Follower
         && matches!(
@@ -146,8 +160,9 @@ async fn execute(
         Command::Persist { key } => Ok(Response::Integer(bool_to_integer(
             database.persist(key).await?,
         ))),
-        Command::Info => Ok(Response::Info(vec![
-            ("version".to_owned(), VERSION.to_owned()),
+        Command::Info => {
+            let mut fields = vec![
+                ("version".to_owned(), VERSION.to_owned()),
             (
                 "uptime_seconds".to_owned(),
                 started_at.elapsed().as_secs().to_string(),
@@ -163,7 +178,23 @@ async fn execute(
                 "replication_role".to_owned(),
                 replication_role.as_str().to_owned(),
             ),
-        ])),
+                ("cluster_enabled".to_owned(), cluster.is_some().to_string()),
+            ];
+            if let Some(cluster) = cluster {
+                fields.extend([
+                    (
+                        "cluster_node_id".to_owned(),
+                        cluster.local_node().id().to_owned(),
+                    ),
+                    ("cluster_nodes".to_owned(), cluster.node_count().to_string()),
+                    (
+                        "cluster_virtual_nodes".to_owned(),
+                        cluster.virtual_nodes().to_string(),
+                    ),
+                ]);
+            }
+            Ok(Response::Info(fields))
+        }
         Command::Stats => {
             let snapshot = metrics.snapshot();
             Ok(Response::Stats(vec![
@@ -228,6 +259,14 @@ async fn execute(
                 (
                     "replication_lag_bytes".to_owned(),
                     snapshot.replication_lag_bytes,
+                ),
+                (
+                    "cluster_redirects_total".to_owned(),
+                    snapshot.cluster_redirects_total,
+                ),
+                (
+                    "cluster_local_commands_total".to_owned(),
+                    snapshot.cluster_local_commands_total,
                 ),
             ]))
         }

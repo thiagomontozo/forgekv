@@ -39,6 +39,19 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn key(&self) -> Option<&Bytes> {
+        match self {
+            Self::Set { key, .. }
+            | Self::Get { key }
+            | Self::Del { key }
+            | Self::Exists { key }
+            | Self::SetEx { key, .. }
+            | Self::Ttl { key }
+            | Self::Persist { key } => Some(key),
+            Self::Ping | Self::Info | Self::Stats => None,
+        }
+    }
+
     pub fn into_frame(self) -> Result<Frame, ProtocolError> {
         let (opcode, payload) = match self {
             Self::Ping => (Opcode::Ping, Bytes::new()),

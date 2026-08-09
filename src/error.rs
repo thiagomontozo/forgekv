@@ -36,6 +36,10 @@ pub enum ProtocolError {
     ValueTooLarge { actual: usize, maximum: usize },
     #[error("integer overflow while processing untrusted input")]
     IntegerOverflow,
+    #[error("cluster redirect limit exceeded")]
+    RedirectLimitExceeded,
+    #[error("cluster redirect loop detected at {0}")]
+    RedirectLoop(String),
 }
 
 #[derive(Debug, Error)]

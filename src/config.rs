@@ -7,6 +7,7 @@ pub const DEFAULT_MAX_KEY_SIZE: usize = 4 * 1024;
 pub const DEFAULT_MAX_VALUE_SIZE: usize = 1024 * 1024;
 pub const DEFAULT_REPLICATION_MAX_BATCH_SIZE: usize = 4 * 1024 * 1024;
 pub const DEFAULT_REPLICATION_MAX_SNAPSHOT_SIZE: usize = 256 * 1024 * 1024;
+pub const DEFAULT_CLUSTER_VIRTUAL_NODES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplicationRole {
@@ -65,6 +66,10 @@ pub struct Config {
     pub replication_interval: Duration,
     pub replication_max_batch_size: usize,
     pub replication_max_snapshot_size: usize,
+    pub cluster_enabled: bool,
+    pub cluster_node_id: String,
+    pub cluster_nodes: String,
+    pub cluster_virtual_nodes: usize,
 }
 
 impl Default for Config {
@@ -91,6 +96,10 @@ impl Default for Config {
             replication_interval: Duration::from_millis(250),
             replication_max_batch_size: DEFAULT_REPLICATION_MAX_BATCH_SIZE,
             replication_max_snapshot_size: DEFAULT_REPLICATION_MAX_SNAPSHOT_SIZE,
+            cluster_enabled: false,
+            cluster_node_id: String::new(),
+            cluster_nodes: String::new(),
+            cluster_virtual_nodes: DEFAULT_CLUSTER_VIRTUAL_NODES,
         }
     }
 }
@@ -306,6 +315,40 @@ impl Config {
             ));
         }
 
+        let cluster_enabled = match lookup("FORGEKV_CLUSTER_ENABLED") {
+            Some(value) => value
+                .parse::<bool>()
+                .map_err(|_| invalid("FORGEKV_CLUSTER_ENABLED", value, "true or false"))?,
+            None => defaults.cluster_enabled,
+        };
+        let cluster_node_id = lookup("FORGEKV_CLUSTER_NODE_ID").unwrap_or_default();
+        let cluster_nodes = lookup("FORGEKV_CLUSTER_NODES").unwrap_or_default();
+        let cluster_virtual_nodes = parse_or(
+            "FORGEKV_CLUSTER_VIRTUAL_NODES",
+            defaults.cluster_virtual_nodes,
+            &lookup,
+        )?;
+        if !(1..=4096).contains(&cluster_virtual_nodes) {
+            return Err(invalid(
+                "FORGEKV_CLUSTER_VIRTUAL_NODES",
+                cluster_virtual_nodes.to_string(),
+                "integer in 1..=4096",
+            ));
+        }
+        if cluster_enabled {
+            if replication_role != ReplicationRole::Standalone {
+                return Err(ConfigError::InvalidCombination(
+                    "cluster partitioning cannot be combined with leader/follower replication in v0.4"
+                        .to_owned(),
+                ));
+            }
+            crate::cluster::ClusterTopology::new(
+                &cluster_node_id,
+                &cluster_nodes,
+                cluster_virtual_nodes,
+            )?;
+        }
+
         Ok(Self {
             host,
             port,
@@ -328,6 +371,10 @@ impl Config {
             replication_interval: Duration::from_millis(replication_interval_ms),
             replication_max_batch_size,
             replication_max_snapshot_size,
+            cluster_enabled,
+            cluster_node_id,
+            cluster_nodes,
+            cluster_virtual_nodes,
         })
     }
 
@@ -420,7 +467,7 @@ mod tests {
             ("FORGEKV_MAX_CONNECTIONS", "128".to_owned()),
         ]);
         let config = Config::from_lookup(|name| values.get(name).cloned())
-            .expect("v0.3 configuration should be valid");
+            .expect("configuration should be valid");
         assert_eq!(config.fsync, FsyncMode::EverySecond);
         assert_eq!(config.max_connections, 128);
     }
@@ -442,5 +489,37 @@ mod tests {
             .expect("follower configuration should be valid");
         assert_eq!(config.replication_role, ReplicationRole::Follower);
         assert_eq!(config.leader_address, "leader:6381");
+    }
+
+    #[test]
+    fn accepts_static_cluster_configuration() {
+        let values = HashMap::from([
+            ("FORGEKV_CLUSTER_ENABLED", "true".to_owned()),
+            ("FORGEKV_CLUSTER_NODE_ID", "node-a".to_owned()),
+            (
+                "FORGEKV_CLUSTER_NODES",
+                "node-a@127.0.0.1:6380,node-b@127.0.0.1:6382".to_owned(),
+            ),
+            ("FORGEKV_CLUSTER_VIRTUAL_NODES", "256".to_owned()),
+        ]);
+        let config = Config::from_lookup(|name| values.get(name).cloned())
+            .expect("cluster configuration should be valid");
+        assert!(config.cluster_enabled);
+        assert_eq!(config.cluster_node_id, "node-a");
+        assert_eq!(config.cluster_virtual_nodes, 256);
+    }
+
+    #[test]
+    fn rejects_cluster_with_replication() {
+        let values = HashMap::from([
+            ("FORGEKV_CLUSTER_ENABLED", "true".to_owned()),
+            ("FORGEKV_CLUSTER_NODE_ID", "node-a".to_owned()),
+            (
+                "FORGEKV_CLUSTER_NODES",
+                "node-a@127.0.0.1:6380".to_owned(),
+            ),
+            ("FORGEKV_ROLE", "leader".to_owned()),
+        ]);
+        assert!(Config::from_lookup(|name| values.get(name).cloned()).is_err());
     }
 }

@@ -12,6 +12,7 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::{
+    cluster::ClusterTopology,
     config::{Config, ReplicationRole},
     error::ForgeError,
     metrics::Metrics,
@@ -53,6 +54,23 @@ impl Server {
         listener: TcpListener,
         mut shutdown: watch::Receiver<bool>,
     ) -> Result<(), ForgeError> {
+        let cluster = if self.config.cluster_enabled {
+            Some(Arc::new(ClusterTopology::new(
+                &self.config.cluster_node_id,
+                &self.config.cluster_nodes,
+                self.config.cluster_virtual_nodes,
+            )?))
+        } else {
+            None
+        };
+        if let Some(topology) = &cluster {
+            info!(
+                node_id = topology.local_node().id(),
+                nodes = topology.node_count(),
+                virtual_nodes = topology.virtual_nodes(),
+                "static cluster routing enabled"
+            );
+        }
         let mut connections = JoinSet::new();
         let connection_limit = Arc::new(Semaphore::new(self.config.max_connections));
         let metrics_listener = if self.config.metrics_enabled {
@@ -172,6 +190,7 @@ impl Server {
                         listening_address: self.listening_address.clone(),
                         fsync: self.config.fsync,
                         replication_role: self.config.replication_role,
+                        cluster: cluster.clone(),
                     });
                     let connection_shutdown = shutdown.clone();
                     connections.spawn(async move {

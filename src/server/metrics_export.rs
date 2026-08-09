@@ -180,6 +180,16 @@ pub(crate) fn render_prometheus(metrics: &Metrics) -> String {
             "gauge",
             snapshot.replication_lag_bytes,
         ),
+        (
+            "forgekv_cluster_redirects_total",
+            "counter",
+            snapshot.cluster_redirects_total,
+        ),
+        (
+            "forgekv_cluster_local_commands_total",
+            "counter",
+            snapshot.cluster_local_commands_total,
+        ),
     ];
     let mut output = String::new();
     for (name, metric_type, value) in values {

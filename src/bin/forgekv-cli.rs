@@ -105,5 +105,6 @@ fn print_response(response: Response) {
                 println!("{name}: {value}");
             }
         }
+        Response::Redirect(address) => eprintln!("REDIRECT: {address}"),
     }
 }
