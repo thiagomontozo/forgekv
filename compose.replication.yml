@@ -2,7 +2,7 @@ services:
   forgekv-leader:
     build:
       context: .
-    image: forgekv:0.3.0
+    image: forgekv:0.4.0
     restart: unless-stopped
     environment:
       FORGEKV_HOST: 0.0.0.0
@@ -23,7 +23,7 @@ services:
     stop_grace_period: 15s
 
   forgekv-follower:
-    image: forgekv:0.3.0
+    image: forgekv:0.4.0
     restart: unless-stopped
     depends_on:
       - forgekv-leader

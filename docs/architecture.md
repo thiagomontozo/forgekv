@@ -2,7 +2,7 @@
 
 ## Scope
 
-ForgeKV v0.3 is a persistent key-value database with a standalone mode and asynchronous leader/read-only-follower replication. It owns its TCP protocols, in-memory data structures, expiration, persistence, recovery, and replication state. It deliberately excludes HTTP CRUD, external databases, Redis compatibility, consensus, automatic failover, clustering, and advanced authentication.
+ForgeKV v0.4 is a persistent key-value database with standalone operation, asynchronous leader/read-only-follower replication, and experimental statically configured partitioning. It owns its TCP protocols, in-memory data structures, expiration, persistence, recovery, replication state, and key ownership routing. It deliberately excludes HTTP CRUD, external databases, Redis compatibility, consensus, automatic failover, dynamic membership, and advanced authentication.
 
 ## Networking and async runtime
 
@@ -27,6 +27,8 @@ The router distinguishes read-only and mutating commands:
 The WAL guard is intentionally held across the asynchronous append and the following short in-memory mutation. This serializes mutations, but ensures another task cannot persist and apply a later command before the earlier command reaches memory. No store shard lock is held across an `.await`.
 
 Clients may pipeline up to 1,024 commands. The client writes all frames before reading responses; the server executes them sequentially per connection, preserving response order without request identifiers.
+
+When static cluster mode is enabled, routing happens after payload validation and before persistence or store access. Key-bearing commands use the cluster ring; a non-owner returns a typed redirect containing the configured client address. `PING`, `INFO`, and `STATS` always execute on the contacted node. The bundled client follows a bounded redirect chain and detects repeated addresses. Redirected pipeline elements are resolved individually after the seed node returns the ordered initial responses.
 
 Followers reject `SET`, `DEL`, `SETEX`, and `PERSIST` before they reach the WAL. Reads remain available while continuous replication reconnects, so they may be stale. A follower performs one initial synchronization before its client listener is bound.
 
@@ -70,9 +72,15 @@ Leaders expose a dedicated bounded TCP endpoint. A follower identifies the last 
 
 Compaction increments persistent WAL generation. A new follower, different node identity, generation mismatch, or incompatible offset forces a full checksummed snapshot. Snapshot capture and WAL reads take the same mutation ordering guard, so every response represents a coherent boundary. The full wire contract is in [Replication](replication.md).
 
+## Experimental partitioning
+
+Every cluster node receives the same static `node-id@host:port` membership and virtual-node count. Membership is sorted by node ID before a deterministic FNV-1a ring is constructed, so input order does not alter placement. Each member contributes a fixed number of ring points. A key belongs to the first point whose hash is at or after the key hash, wrapping to the first point at the end of the ring.
+
+Partition ownership is independent from the in-process shard calculation: the cluster ring chooses a server, then that server's shard hash chooses a local lock and map. Nodes do not proxy requests or communicate for ownership. The client follows the advertised owner address. There is no membership protocol, failure detector, replica placement, data movement, or availability guarantee. Cluster and leader/follower modes are rejected as an invalid combination in v0.4. See [Cluster Partitioning](cluster.md).
+
 ## Metrics and logging
 
-Hot-path counters use relaxed atomics because they are observational and do not establish correctness ordering. `STATS` returns a snapshot of all counters. `INFO` derives version, uptime, live key count, shard count, actual listening address, and fsync mode from active state.
+Hot-path counters use relaxed atomics because they are observational and do not establish correctness ordering. `STATS` returns a snapshot of all counters, including cluster-local routing and redirects. `INFO` derives version, uptime, live key count, shard count, actual listening address, fsync mode, replication role, and cluster identity from active state.
 
 `tracing` records startup, WAL initialization and replay, connections, protocol, persistence and replication errors, expiration, synchronization boundaries, shutdown, and WAL flush. Stored values are never logged.
 

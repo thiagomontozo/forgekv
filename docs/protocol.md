@@ -77,8 +77,9 @@ Empty values are valid. `value_length` must not exceed `FORGEKV_MAX_VALUE_SIZE`.
 | `0x06` | `INTEGER` | `i64` |
 | `0x07` | `INFO` | string field map |
 | `0x08` | `STATS` | unsigned metric map |
+| `0x09` | `REDIRECT` | UTF-8 client address |
 
-Error and value strings use a `u32` length followed by that many bytes. `VALUE` remains binary; only error messages require UTF-8.
+Error messages and redirect addresses use a `u32` length followed by that many UTF-8 bytes. `VALUE` uses the same length prefix but remains binary.
 
 ### INFO field map
 
@@ -91,7 +92,7 @@ repeat field_count times:
     u8  value[value_length]     # UTF-8
 ```
 
-Fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, `fsync`, and `replication_role`. Clients must ignore unknown fields for forward compatibility.
+Fields are `version`, `uptime_seconds`, `keys`, `shards`, `listening_address`, `fsync`, `replication_role`, and `cluster_enabled`. Cluster nodes also return `cluster_node_id`, `cluster_nodes`, and `cluster_virtual_nodes`. Clients must ignore unknown fields for forward compatibility.
 
 ### STATS metric map
 
@@ -103,7 +104,7 @@ repeat field_count times:
     u64 value
 ```
 
-The base fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`. v0.2 added `connections_rejected_total`, `snapshots_created_total`, `wal_compactions_total`, and `snapshot_entries_written`. v0.3 adds `replication_connections_total`, `replication_syncs_total`, `replication_full_syncs_total`, `replication_bytes_sent_total`, `replication_bytes_received_total`, `replication_errors_total`, and `replication_lag_bytes`.
+The base fields are `connections_total`, `connections_active`, `commands_total`, `gets_total`, `sets_total`, `deletes_total`, `hits_total`, `misses_total`, `expired_keys_total`, `protocol_errors_total`, `wal_records_written`, and `wal_bytes_written`. v0.2 added `connections_rejected_total`, `snapshots_created_total`, `wal_compactions_total`, and `snapshot_entries_written`. v0.3 added replication counters and `replication_lag_bytes`. v0.4 adds `cluster_redirects_total` and `cluster_local_commands_total`.
 
 ## Command semantics
 
@@ -118,6 +119,7 @@ The base fields are `connections_total`, `connections_active`, `commands_total`,
 - `INFO` returns the server field map.
 - `STATS` returns the metric map.
 - A follower returns `SERVER_ERROR` for every mutating command and continues serving read commands.
+- In cluster mode, a node that does not own a key returns `REDIRECT` with the owner's configured `host:port`. It does not execute that command locally.
 
 Leader/follower traffic does not use this client frame. It has a separate specification in [Replication](replication.md).
 
@@ -141,4 +143,4 @@ length=2     v1 PONG
 
 ## Robust client behavior
 
-A client must cap response lengths before allocation, verify the expected payload shape for the returned status, reject unsupported versions, and treat a truncated response as a connection failure. Protocol v1 has no request identifiers. Pipelined clients may write multiple complete frames without waiting, but must read exactly one response per request in the same order.
+A client must cap response lengths before allocation, verify the expected payload shape for the returned status, reject unsupported versions, and treat a truncated response as a connection failure. A redirect-aware client must bound redirect depth, detect address loops, and resend the identical command only after connecting to the advertised owner. Protocol v1 has no request identifiers. Pipelined clients may write multiple complete frames without waiting, but must read exactly one response per request in the same order.

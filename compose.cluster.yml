@@ -1,0 +1,55 @@
+x-cluster-environment: &cluster-environment
+  FORGEKV_HOST: 0.0.0.0
+  FORGEKV_PORT: 6380
+  FORGEKV_ROLE: standalone
+  FORGEKV_CLUSTER_ENABLED: "true"
+  FORGEKV_CLUSTER_NODES: node-a@127.0.0.1:6380,node-b@127.0.0.1:6382,node-c@127.0.0.1:6383
+  FORGEKV_CLUSTER_VIRTUAL_NODES: 128
+  FORGEKV_DATA_DIR: /data
+  FORGEKV_FSYNC: everysec
+  FORGEKV_METRICS_ENABLED: "false"
+  RUST_LOG: info
+
+services:
+  forgekv-node-a:
+    build:
+      context: .
+    image: forgekv:0.4.0
+    restart: unless-stopped
+    environment:
+      <<: *cluster-environment
+      FORGEKV_CLUSTER_NODE_ID: node-a
+    ports:
+      - "6380:6380"
+    volumes:
+      - forgekv-node-a-data:/data
+    stop_grace_period: 15s
+
+  forgekv-node-b:
+    image: forgekv:0.4.0
+    restart: unless-stopped
+    environment:
+      <<: *cluster-environment
+      FORGEKV_CLUSTER_NODE_ID: node-b
+    ports:
+      - "6382:6380"
+    volumes:
+      - forgekv-node-b-data:/data
+    stop_grace_period: 15s
+
+  forgekv-node-c:
+    image: forgekv:0.4.0
+    restart: unless-stopped
+    environment:
+      <<: *cluster-environment
+      FORGEKV_CLUSTER_NODE_ID: node-c
+    ports:
+      - "6383:6380"
+    volumes:
+      - forgekv-node-c-data:/data
+    stop_grace_period: 15s
+
+volumes:
+  forgekv-node-a-data:
+  forgekv-node-b-data:
+  forgekv-node-c-data:

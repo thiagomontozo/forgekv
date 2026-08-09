@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Add experimental static cluster membership and deterministic consistent hashing.
+- Route key commands to one partition owner before local store or WAL access.
+- Add a typed binary redirect response and bounded redirect-aware client behavior.
+- Add cluster counters, integration tests, a three-node Compose example, documentation, and an ADR.
+- Keep cluster partitioning explicitly separate from leader/follower replication.
+
 ## 0.3.0
 
 - Add asynchronous leader/follower replication on a dedicated binary TCP protocol.

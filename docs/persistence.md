@@ -2,7 +2,7 @@
 
 ## Purpose and path
 
-ForgeKV v0.3 persists mutations in `${FORGEKV_DATA_DIR}/forgekv.wal` and compacted state in `${FORGEKV_DATA_DIR}/forgekv.snapshot`. Recovery loads the snapshot first and replays the remaining WAL afterward. Replication metadata uses `forgekv.node`, `forgekv.generation`, and, on followers, `forgekv.replica`.
+ForgeKV v0.4 persists mutations in `${FORGEKV_DATA_DIR}/forgekv.wal` and compacted state in `${FORGEKV_DATA_DIR}/forgekv.snapshot`. Recovery loads the snapshot first and replays the remaining WAL afterward. Replication metadata uses `forgekv.node`, `forgekv.generation`, and, on followers, `forgekv.replica`. In cluster mode, each partition owns an independent data directory and WAL; changing membership does not move persisted keys.
 
 ## File header
 
