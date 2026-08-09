@@ -2,7 +2,7 @@ use bytes::Bytes;
 use forgekv::{
     command::{parse_command, Command},
     error::ProtocolError,
-    protocol::{read_frame, Frame, Opcode, ProtocolLimits, PROTOCOL_VERSION},
+    protocol::{read_frame, Frame, Opcode, ProtocolLimits, Response, PROTOCOL_VERSION},
 };
 use tokio::io::{AsyncWriteExt, DuplexStream};
 
@@ -110,4 +110,17 @@ fn frame_round_trip_preserves_binary_payload() {
     let frame = Frame::request(Opcode::Set, Bytes::from_static(b"\0\xff\x10"));
     let encoded = frame.encode(limits()).expect("frame should encode");
     assert_eq!(&encoded[6..], frame.payload.as_ref());
+}
+
+#[test]
+fn redirect_response_round_trip_preserves_address() {
+    let expected = Response::Redirect("127.0.0.1:6382".to_owned());
+    let frame = expected
+        .clone()
+        .into_frame()
+        .expect("redirect should encode");
+    assert_eq!(
+        Response::from_frame(frame).expect("redirect should decode"),
+        expected
+    );
 }
