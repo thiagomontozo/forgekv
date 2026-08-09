@@ -96,7 +96,7 @@ async fn client_follows_redirect_to_key_owner() -> Result<(), Box<dyn Error>> {
 
     let mut seed_client = Client::connect(&address_a, limits()).await?;
     assert_eq!(
-        seed_client.get(key).await?,
+        seed_client.get(key.clone()).await?,
         Response::Value(Bytes::from_static(b"partitioned-value"))
     );
     let responses = seed_client
