@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 use crate::{
@@ -28,6 +29,32 @@ impl Client {
             ProtocolError::InvalidPayload("server closed the connection before responding"),
         )?;
         Response::from_frame(response)
+    }
+
+    pub async fn execute_pipeline(
+        &mut self,
+        commands: Vec<Command>,
+    ) -> Result<Vec<Response>, ProtocolError> {
+        const MAX_PIPELINE_COMMANDS: usize = 1_024;
+        if commands.len() > MAX_PIPELINE_COMMANDS {
+            return Err(ProtocolError::InvalidPayload(
+                "pipeline exceeds 1024 commands",
+            ));
+        }
+        let response_count = commands.len();
+        for command in commands {
+            let encoded = command.into_frame()?.encode(self.limits)?;
+            self.stream.write_all(&encoded).await?;
+        }
+        self.stream.flush().await?;
+        let mut responses = Vec::with_capacity(response_count);
+        for _ in 0..response_count {
+            let frame = read_frame(&mut self.stream, self.limits).await?.ok_or(
+                ProtocolError::InvalidPayload("server closed during pipeline response"),
+            )?;
+            responses.push(Response::from_frame(frame)?);
+        }
+        Ok(responses)
     }
 
     pub async fn ping(&mut self) -> Result<Response, ProtocolError> {

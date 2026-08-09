@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions as StdOpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -18,12 +18,16 @@ use crate::{
     error::{PersistenceError, StoreError},
     metrics::Metrics,
     protocol::ProtocolLimits,
-    store::ShardedStore,
+    store::{ShardedStore, SnapshotEntry},
 };
 
-use super::record::{
+use super::{
+    load_snapshot,
+    record::{
     validate_lengths, RecordType, WalRecord, RECORD_FIXED_AFTER_MAGIC, RECORD_FIXED_TOTAL,
     RECORD_MAGIC, WAL_HEADER,
+    },
+    write_snapshot_atomic,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -32,6 +36,8 @@ pub struct RecoveryReport {
     pub recovered_keys: usize,
     pub truncated_tail_removed: bool,
     pub valid_bytes: u64,
+    pub snapshot_entries_loaded: u64,
+    pub snapshot_expired_entries_skipped: u64,
 }
 
 #[derive(Debug)]
@@ -39,6 +45,8 @@ pub struct Wal {
     file: TokioFile,
     fsync: FsyncMode,
     metrics: Arc<Metrics>,
+    bytes_written: u64,
+    dirty: bool,
 }
 
 impl Wal {
@@ -53,10 +61,13 @@ impl Wal {
             .read(true)
             .open(path)
             .await?;
+        let bytes_written = file.metadata().await?.len();
         Ok(Self {
             file,
             fsync,
             metrics,
+            bytes_written,
+            dirty: false,
         })
     }
 
@@ -66,16 +77,49 @@ impl Wal {
         self.file.flush().await?;
         if self.fsync == FsyncMode::Always {
             self.file.sync_data().await?;
+            self.dirty = false;
+        } else {
+            self.dirty = true;
         }
+        self.bytes_written = self.bytes_written.saturating_add(encoded.len() as u64);
         self.metrics.wal_write(encoded.len() as u64);
         Ok(())
     }
 
     pub async fn flush(&mut self) -> Result<(), PersistenceError> {
         self.file.flush().await?;
-        if self.fsync == FsyncMode::Always {
+        if self.fsync != FsyncMode::None {
             self.file.sync_data().await?;
         }
+        self.dirty = false;
+        Ok(())
+    }
+
+    pub async fn sync_if_needed(&mut self) -> Result<bool, PersistenceError> {
+        if self.fsync == FsyncMode::EverySecond && self.dirty {
+            self.file.sync_data().await?;
+            self.dirty = false;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written
+    }
+
+    pub async fn reset(&mut self) -> Result<(), PersistenceError> {
+        self.file.set_len(0).await?;
+        self.file.write_all(&WAL_HEADER).await?;
+        self.file.flush().await?;
+        if self.fsync != FsyncMode::None {
+            self.file.sync_data().await?;
+            self.dirty = false;
+        } else {
+            self.dirty = true;
+        }
+        self.bytes_written = WAL_HEADER.len() as u64;
         Ok(())
     }
 }
@@ -85,6 +129,8 @@ pub struct Database {
     store: Arc<ShardedStore>,
     wal: Mutex<Wal>,
     metrics: Arc<Metrics>,
+    snapshot_path: PathBuf,
+    compaction_threshold_bytes: u64,
 }
 
 impl Database {
@@ -94,14 +140,23 @@ impl Database {
         metrics: Arc<Metrics>,
     ) -> Result<(Self, RecoveryReport), PersistenceError> {
         let path = config.wal_path();
+        let snapshot = load_snapshot(
+            &config.snapshot_path(),
+            store.as_ref(),
+            ProtocolLimits::from(config),
+        )?;
         prepare_wal(&path, config.fsync)?;
-        let report = recover_wal(&path, store.as_ref(), ProtocolLimits::from(config))?;
+        let mut report = recover_wal(&path, store.as_ref(), ProtocolLimits::from(config))?;
+        report.snapshot_entries_loaded = snapshot.entries_loaded;
+        report.snapshot_expired_entries_skipped = snapshot.expired_entries_skipped;
         let wal = Wal::open(&path, config.fsync, Arc::clone(&metrics)).await?;
         Ok((
             Self {
                 store,
                 wal: Mutex::new(wal),
                 metrics,
+                snapshot_path: config.snapshot_path(),
+                compaction_threshold_bytes: config.wal_compaction_threshold_bytes,
             },
             report,
         ))
@@ -160,6 +215,44 @@ impl Database {
     pub async fn flush(&self) -> Result<(), PersistenceError> {
         self.wal.lock().await.flush().await
     }
+
+    pub async fn sync_if_needed(&self) -> Result<bool, PersistenceError> {
+        self.wal.lock().await.sync_if_needed().await
+    }
+
+    pub async fn compact_if_needed(&self) -> Result<bool, PersistenceError> {
+        let mut wal = self.wal.lock().await;
+        if self.compaction_threshold_bytes == 0
+            || wal.bytes_written() < self.compaction_threshold_bytes
+        {
+            return Ok(false);
+        }
+        let entries = self.store.snapshot_entries()?;
+        let entry_count = write_snapshot_async(self.snapshot_path.clone(), entries).await?;
+        wal.reset().await?;
+        self.metrics.compaction_completed(entry_count as u64);
+        Ok(true)
+    }
+
+    pub async fn compact(&self) -> Result<usize, PersistenceError> {
+        let mut wal = self.wal.lock().await;
+        let entries = self.store.snapshot_entries()?;
+        let entry_count = write_snapshot_async(self.snapshot_path.clone(), entries).await?;
+        wal.reset().await?;
+        self.metrics.compaction_completed(entry_count as u64);
+        Ok(entry_count)
+    }
+}
+
+async fn write_snapshot_async(
+    path: PathBuf,
+    entries: Vec<SnapshotEntry>,
+) -> Result<usize, PersistenceError> {
+    let entry_count = entries.len();
+    tokio::task::spawn_blocking(move || write_snapshot_atomic(&path, &entries))
+        .await
+        .map_err(|error| PersistenceError::SnapshotTask(error.to_string()))??;
+    Ok(entry_count)
 }
 
 pub fn prepare_wal(path: &Path, fsync: FsyncMode) -> Result<(), PersistenceError> {
@@ -176,7 +269,7 @@ pub fn prepare_wal(path: &Path, fsync: FsyncMode) -> Result<(), PersistenceError
     if length == 0 {
         file.write_all(&WAL_HEADER)?;
         file.flush()?;
-        if fsync == FsyncMode::Always {
+        if fsync != FsyncMode::None {
             file.sync_data()?;
         }
     } else {

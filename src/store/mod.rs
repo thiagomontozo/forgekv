@@ -20,6 +20,13 @@ pub enum TtlState {
     ExpiresIn(Duration),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SnapshotEntry {
+    pub key: Bytes,
+    pub value: Bytes,
+    pub expires_at: Option<SystemTime>,
+}
+
 #[derive(Debug)]
 pub struct ShardedStore {
     shards: Vec<Shard>,
@@ -208,6 +215,24 @@ impl ShardedStore {
 
     pub fn is_empty(&self) -> Result<bool, StoreError> {
         Ok(self.len()? == 0)
+    }
+
+    pub fn snapshot_entries(&self) -> Result<Vec<SnapshotEntry>, StoreError> {
+        let now = SystemTime::now();
+        let mut snapshot = Vec::new();
+        for shard in &self.shards {
+            let entries = shard.read()?;
+            for (key, entry) in entries.iter() {
+                if !entry.is_expired_at(now) {
+                    snapshot.push(SnapshotEntry {
+                        key: Bytes::copy_from_slice(key),
+                        value: entry.value().clone(),
+                        expires_at: entry.expires_at(),
+                    });
+                }
+            }
+        }
+        Ok(snapshot)
     }
 }
 

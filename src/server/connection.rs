@@ -165,6 +165,22 @@ async fn execute(
                     snapshot.wal_records_written,
                 ),
                 ("wal_bytes_written".to_owned(), snapshot.wal_bytes_written),
+                (
+                    "connections_rejected_total".to_owned(),
+                    snapshot.connections_rejected_total,
+                ),
+                (
+                    "snapshots_created_total".to_owned(),
+                    snapshot.snapshots_created_total,
+                ),
+                (
+                    "wal_compactions_total".to_owned(),
+                    snapshot.wal_compactions_total,
+                ),
+                (
+                    "snapshot_entries_written".to_owned(),
+                    snapshot.snapshot_entries_written,
+                ),
             ]))
         }
     }

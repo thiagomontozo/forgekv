@@ -22,6 +22,7 @@ async fn main() -> Result<(), ForgeError> {
         records = recovery.records_replayed,
         keys = recovery.recovered_keys,
         truncated_tail = recovery.truncated_tail_removed,
+        snapshot_entries = recovery.snapshot_entries_loaded,
         "WAL replay completed"
     );
     let database = Arc::new(database);

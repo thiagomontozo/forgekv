@@ -1,6 +1,9 @@
 /target
 /data
 *.wal
+*.snapshot
+*.snapshot.tmp
+*.snapshot.bak
 .env
 *.tmp
 *.temp

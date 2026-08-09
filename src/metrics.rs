@@ -14,6 +14,10 @@ pub struct Metrics {
     protocol_errors_total: AtomicU64,
     wal_records_written: AtomicU64,
     wal_bytes_written: AtomicU64,
+    connections_rejected_total: AtomicU64,
+    snapshots_created_total: AtomicU64,
+    wal_compactions_total: AtomicU64,
+    snapshot_entries_written: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +34,10 @@ pub struct MetricsSnapshot {
     pub protocol_errors_total: u64,
     pub wal_records_written: u64,
     pub wal_bytes_written: u64,
+    pub connections_rejected_total: u64,
+    pub snapshots_created_total: u64,
+    pub wal_compactions_total: u64,
+    pub snapshot_entries_written: u64,
 }
 
 impl Metrics {
@@ -74,6 +82,18 @@ impl Metrics {
         self.protocol_errors_total.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn connection_rejected(&self) {
+        self.connections_rejected_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn compaction_completed(&self, entries: u64) {
+        self.snapshots_created_total.fetch_add(1, Ordering::Relaxed);
+        self.wal_compactions_total.fetch_add(1, Ordering::Relaxed);
+        self.snapshot_entries_written
+            .fetch_add(entries, Ordering::Relaxed);
+    }
+
     pub fn wal_write(&self, bytes: u64) {
         self.wal_records_written.fetch_add(1, Ordering::Relaxed);
         self.wal_bytes_written.fetch_add(bytes, Ordering::Relaxed);
@@ -93,6 +113,10 @@ impl Metrics {
             protocol_errors_total: self.protocol_errors_total.load(Ordering::Relaxed),
             wal_records_written: self.wal_records_written.load(Ordering::Relaxed),
             wal_bytes_written: self.wal_bytes_written.load(Ordering::Relaxed),
+            connections_rejected_total: self.connections_rejected_total.load(Ordering::Relaxed),
+            snapshots_created_total: self.snapshots_created_total.load(Ordering::Relaxed),
+            wal_compactions_total: self.wal_compactions_total.load(Ordering::Relaxed),
+            snapshot_entries_written: self.snapshot_entries_written.load(Ordering::Relaxed),
         }
     }
 }

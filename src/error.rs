@@ -72,6 +72,12 @@ pub enum PersistenceError {
     ClockBeforeEpoch,
     #[error("store recovery failed: {0}")]
     Store(#[from] StoreError),
+    #[error("invalid snapshot header")]
+    InvalidSnapshotHeader,
+    #[error("snapshot corruption at entry {entry}: {reason}")]
+    SnapshotCorruption { entry: u64, reason: &'static str },
+    #[error("snapshot worker failed: {0}")]
+    SnapshotTask(String),
 }
 
 #[derive(Debug, Error)]
