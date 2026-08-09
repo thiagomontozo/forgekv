@@ -15,4 +15,3 @@ Implement ForgeKV in stable Rust, use Tokio for asynchronous networking and file
 ## Consequences
 
 Ownership and error handling are explicit, many input and concurrency mistakes are rejected by the compiler, and the runtime footprint stays focused. Contributors must understand Rust's ownership model and async boundaries. Some low-level optimizations that require unsafe code are deferred.
-

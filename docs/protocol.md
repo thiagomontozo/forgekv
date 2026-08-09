@@ -139,4 +139,3 @@ length=2     v1 PONG
 ## Robust client behavior
 
 A client must cap response lengths before allocation, verify the expected payload shape for the returned status, reject unsupported versions, and treat a truncated response as a connection failure. Protocol v1 has no request identifiers; clients sharing a socket must serialize reads and writes or preserve strict request order.
-

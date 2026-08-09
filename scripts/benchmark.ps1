@@ -15,4 +15,3 @@ $report = Join-Path $PSScriptRoot "..\target\criterion\report\index.html"
 if ($OpenReport -and (Test-Path -LiteralPath $report)) {
     Invoke-Item $report
 }
-

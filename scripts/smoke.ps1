@@ -17,4 +17,3 @@ if (-not (Test-Path -LiteralPath $CliPath)) {
 & $CliPath ttl smoke:session
 & $CliPath del smoke:key
 & $CliPath stats
-

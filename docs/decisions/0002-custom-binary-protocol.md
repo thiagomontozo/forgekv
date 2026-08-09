@@ -15,4 +15,3 @@ Use a length-prefixed, versioned TCP protocol with typed opcodes, status codes, 
 ## Consequences
 
 Frames are compact and binary values require no text encoding. External clients can be implemented from the protocol specification. ForgeKV must maintain its own client tooling, compatibility rules, parser hardening, and protocol documentation.
-

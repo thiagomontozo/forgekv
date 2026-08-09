@@ -15,4 +15,3 @@ Split keys across a fixed configurable vector of `RwLock<HashMap>` shards select
 ## Consequences
 
 Unrelated shards can be accessed concurrently, the implementation remains small, and behavior is easy to audit. Hot shards still contend, resizing the shard count requires rebuilding memory, and background expiration scans every shard.
-

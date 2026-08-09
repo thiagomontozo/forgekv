@@ -72,4 +72,3 @@ where
         Err(error) => Err(ProtocolError::Io(error)),
     }
 }
-

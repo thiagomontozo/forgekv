@@ -29,4 +29,3 @@ impl Entry {
         self.expires_at = None;
     }
 }
-

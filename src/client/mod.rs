@@ -80,4 +80,3 @@ impl Client {
         self.execute(Command::Stats).await
     }
 }
-

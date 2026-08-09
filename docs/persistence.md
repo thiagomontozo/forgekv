@@ -111,4 +111,3 @@ Any of these stops recovery with an explicit error. ForgeKV does not scan for th
 - WAL growth is unbounded in v0.1.
 - There is no snapshot, compaction, group commit, encryption, or authenticated checksum.
 - CRC32 detects accidental corruption; it is not a cryptographic integrity mechanism.
-

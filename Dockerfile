@@ -27,4 +27,3 @@ VOLUME ["/data"]
 EXPOSE 6380
 
 ENTRYPOINT ["forgekv-server"]
-

@@ -79,4 +79,3 @@ Ctrl+C sends a watch notification:
 7. resources are dropped and the process exits.
 
 The server owns and awaits its background task and connection `JoinSet`, preventing orphaned tasks during a normal shutdown.
-
