@@ -5,6 +5,25 @@ use crate::error::ConfigError;
 pub const DEFAULT_MAX_FRAME_SIZE: usize = 1024 * 1024;
 pub const DEFAULT_MAX_KEY_SIZE: usize = 4 * 1024;
 pub const DEFAULT_MAX_VALUE_SIZE: usize = 1024 * 1024;
+pub const DEFAULT_REPLICATION_MAX_BATCH_SIZE: usize = 4 * 1024 * 1024;
+pub const DEFAULT_REPLICATION_MAX_SNAPSHOT_SIZE: usize = 256 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplicationRole {
+    Standalone,
+    Leader,
+    Follower,
+}
+
+impl ReplicationRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standalone => "standalone",
+            Self::Leader => "leader",
+            Self::Follower => "follower",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FsyncMode {
@@ -39,6 +58,13 @@ pub struct Config {
     pub metrics_enabled: bool,
     pub metrics_host: String,
     pub metrics_port: u16,
+    pub replication_role: ReplicationRole,
+    pub replication_host: String,
+    pub replication_port: u16,
+    pub leader_address: String,
+    pub replication_interval: Duration,
+    pub replication_max_batch_size: usize,
+    pub replication_max_snapshot_size: usize,
 }
 
 impl Default for Config {
@@ -58,6 +84,13 @@ impl Default for Config {
             metrics_enabled: true,
             metrics_host: "127.0.0.1".to_owned(),
             metrics_port: 9090,
+            replication_role: ReplicationRole::Standalone,
+            replication_host: "127.0.0.1".to_owned(),
+            replication_port: 6381,
+            leader_address: "127.0.0.1:6381".to_owned(),
+            replication_interval: Duration::from_millis(250),
+            replication_max_batch_size: DEFAULT_REPLICATION_MAX_BATCH_SIZE,
+            replication_max_snapshot_size: DEFAULT_REPLICATION_MAX_SNAPSHOT_SIZE,
         }
     }
 }
@@ -179,6 +212,105 @@ impl Config {
             return Err(invalid("FORGEKV_METRICS_PORT", "0", "port in 1..=65535"));
         }
 
+        let replication_role_value =
+            lookup("FORGEKV_ROLE").unwrap_or_else(|| "standalone".to_owned());
+        let replication_role = match replication_role_value.to_ascii_lowercase().as_str() {
+            "standalone" => ReplicationRole::Standalone,
+            "leader" => ReplicationRole::Leader,
+            "follower" => ReplicationRole::Follower,
+            _ => {
+                return Err(invalid(
+                    "FORGEKV_ROLE",
+                    replication_role_value,
+                    "one of: standalone, leader, follower",
+                ))
+            }
+        };
+        let replication_host =
+            lookup("FORGEKV_REPLICATION_HOST").unwrap_or(defaults.replication_host);
+        if replication_role == ReplicationRole::Leader && replication_host.trim().is_empty() {
+            return Err(invalid(
+                "FORGEKV_REPLICATION_HOST",
+                replication_host,
+                "non-empty host",
+            ));
+        }
+        let replication_port = parse_or(
+            "FORGEKV_REPLICATION_PORT",
+            defaults.replication_port,
+            &lookup,
+        )?;
+        if replication_role == ReplicationRole::Leader && replication_port == 0 {
+            return Err(invalid(
+                "FORGEKV_REPLICATION_PORT",
+                "0",
+                "port in 1..=65535",
+            ));
+        }
+        let leader_address =
+            lookup("FORGEKV_LEADER_ADDRESS").unwrap_or(defaults.leader_address);
+        if replication_role == ReplicationRole::Follower && leader_address.trim().is_empty() {
+            return Err(invalid(
+                "FORGEKV_LEADER_ADDRESS",
+                leader_address,
+                "non-empty leader address",
+            ));
+        }
+        let replication_interval_ms = parse_or(
+            "FORGEKV_REPLICATION_INTERVAL_MS",
+            250u64,
+            &lookup,
+        )?;
+        if replication_interval_ms == 0 {
+            return Err(invalid(
+                "FORGEKV_REPLICATION_INTERVAL_MS",
+                "0",
+                "positive integer milliseconds",
+            ));
+        }
+        let replication_max_batch_size = parse_or(
+            "FORGEKV_REPLICATION_MAX_BATCH_SIZE",
+            defaults.replication_max_batch_size,
+            &lookup,
+        )?;
+        if !(36..=64 * 1024 * 1024).contains(&replication_max_batch_size) {
+            return Err(invalid(
+                "FORGEKV_REPLICATION_MAX_BATCH_SIZE",
+                replication_max_batch_size.to_string(),
+                "integer in 36..=67108864",
+            ));
+        }
+        if replication_role != ReplicationRole::Standalone {
+            let minimum_batch_size = max_key_size
+                .checked_add(max_value_size)
+                .and_then(|size| size.checked_add(36))
+                .ok_or_else(|| {
+                    ConfigError::InvalidCombination(
+                        "key and value limits exceed the supported replication record size"
+                            .to_owned(),
+                    )
+                })?;
+            if replication_max_batch_size < minimum_batch_size {
+                return Err(invalid(
+                    "FORGEKV_REPLICATION_MAX_BATCH_SIZE",
+                    replication_max_batch_size.to_string(),
+                    "size large enough for one configured WAL record",
+                ));
+            }
+        }
+        let replication_max_snapshot_size = parse_or(
+            "FORGEKV_REPLICATION_MAX_SNAPSHOT_SIZE",
+            defaults.replication_max_snapshot_size,
+            &lookup,
+        )?;
+        if !(16..=1024 * 1024 * 1024).contains(&replication_max_snapshot_size) {
+            return Err(invalid(
+                "FORGEKV_REPLICATION_MAX_SNAPSHOT_SIZE",
+                replication_max_snapshot_size.to_string(),
+                "integer in 16..=1073741824",
+            ));
+        }
+
         Ok(Self {
             host,
             port,
@@ -194,6 +326,13 @@ impl Config {
             metrics_enabled,
             metrics_host,
             metrics_port,
+            replication_role,
+            replication_host,
+            replication_port,
+            leader_address,
+            replication_interval: Duration::from_millis(replication_interval_ms),
+            replication_max_batch_size,
+            replication_max_snapshot_size,
         })
     }
 
@@ -211,6 +350,22 @@ impl Config {
 
     pub fn metrics_address(&self) -> String {
         format!("{}:{}", self.metrics_host, self.metrics_port)
+    }
+
+    pub fn replication_address(&self) -> String {
+        format!("{}:{}", self.replication_host, self.replication_port)
+    }
+
+    pub fn node_id_path(&self) -> PathBuf {
+        self.data_dir.join("forgekv.node")
+    }
+
+    pub fn wal_generation_path(&self) -> PathBuf {
+        self.data_dir.join("forgekv.generation")
+    }
+
+    pub fn replication_state_path(&self) -> PathBuf {
+        self.data_dir.join("forgekv.replica")
     }
 }
 
@@ -239,7 +394,7 @@ fn invalid(name: &'static str, value: impl Into<String>, expected: &'static str)
 mod tests {
     use std::collections::HashMap;
 
-    use super::{Config, FsyncMode};
+    use super::{Config, FsyncMode, ReplicationRole};
 
     #[test]
     fn defaults_are_safe() {
@@ -270,7 +425,7 @@ mod tests {
             ("FORGEKV_MAX_CONNECTIONS", "128".to_owned()),
         ]);
         let config = Config::from_lookup(|name| values.get(name).cloned())
-            .expect("v0.2 configuration should be valid");
+            .expect("v0.3 configuration should be valid");
         assert_eq!(config.fsync, FsyncMode::EverySecond);
         assert_eq!(config.max_connections, 128);
     }
@@ -280,5 +435,17 @@ mod tests {
         let values = HashMap::from([("FORGEKV_MAX_CONNECTIONS", usize::MAX.to_string())]);
         let result = Config::from_lookup(|name| values.get(name).cloned());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn accepts_follower_replication_configuration() {
+        let values = HashMap::from([
+            ("FORGEKV_ROLE", "follower".to_owned()),
+            ("FORGEKV_LEADER_ADDRESS", "leader:6381".to_owned()),
+        ]);
+        let config = Config::from_lookup(|name| values.get(name).cloned())
+            .expect("follower configuration should be valid");
+        assert_eq!(config.replication_role, ReplicationRole::Follower);
+        assert_eq!(config.leader_address, "leader:6381");
     }
 }

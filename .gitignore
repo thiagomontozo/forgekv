@@ -4,6 +4,15 @@
 *.snapshot
 *.snapshot.tmp
 *.snapshot.bak
+*.replica
+*.replica.tmp
+*.replica.bak
+*.generation
+*.generation.tmp
+*.generation.bak
+*.node
+*.node.tmp
+*.node.bak
 .env
 *.tmp
 *.temp

@@ -5,7 +5,7 @@ use tracing::{debug, error, warn};
 
 use crate::{
     command::{parse_command, Command},
-    config::FsyncMode,
+    config::{FsyncMode, ReplicationRole},
     error::{ForgeError, ProtocolError},
     metrics::Metrics,
     persistence::Database,
@@ -21,6 +21,7 @@ pub(super) struct ConnectionContext {
     pub(super) started_at: Instant,
     pub(super) listening_address: String,
     pub(super) fsync: FsyncMode,
+    pub(super) replication_role: ReplicationRole,
 }
 
 pub(super) async fn handle_connection(
@@ -73,6 +74,7 @@ pub(super) async fn handle_connection(
             context.started_at,
             &context.listening_address,
             context.fsync,
+            context.replication_role,
         )
         .await
         {
@@ -96,7 +98,21 @@ async fn execute(
     started_at: Instant,
     listening_address: &str,
     fsync: FsyncMode,
+    replication_role: ReplicationRole,
 ) -> Result<Response, ForgeError> {
+    if replication_role == ReplicationRole::Follower
+        && matches!(
+            &command,
+            Command::Set { .. }
+                | Command::Del { .. }
+                | Command::SetEx { .. }
+                | Command::Persist { .. }
+        )
+    {
+        return Ok(Response::ServerError(
+            "follower is read-only; send mutations to the leader".to_owned(),
+        ));
+    }
     match command {
         Command::Ping => Ok(Response::Pong),
         Command::Set { key, value } => {
@@ -143,6 +159,10 @@ async fn execute(
             ),
             ("listening_address".to_owned(), listening_address.to_owned()),
             ("fsync".to_owned(), fsync.as_str().to_owned()),
+            (
+                "replication_role".to_owned(),
+                replication_role.as_str().to_owned(),
+            ),
         ])),
         Command::Stats => {
             let snapshot = metrics.snapshot();
@@ -180,6 +200,34 @@ async fn execute(
                 (
                     "snapshot_entries_written".to_owned(),
                     snapshot.snapshot_entries_written,
+                ),
+                (
+                    "replication_connections_total".to_owned(),
+                    snapshot.replication_connections_total,
+                ),
+                (
+                    "replication_syncs_total".to_owned(),
+                    snapshot.replication_syncs_total,
+                ),
+                (
+                    "replication_full_syncs_total".to_owned(),
+                    snapshot.replication_full_syncs_total,
+                ),
+                (
+                    "replication_bytes_sent_total".to_owned(),
+                    snapshot.replication_bytes_sent_total,
+                ),
+                (
+                    "replication_bytes_received_total".to_owned(),
+                    snapshot.replication_bytes_received_total,
+                ),
+                (
+                    "replication_errors_total".to_owned(),
+                    snapshot.replication_errors_total,
+                ),
+                (
+                    "replication_lag_bytes".to_owned(),
+                    snapshot.replication_lag_bytes,
                 ),
             ]))
         }

@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Cursor, Read, Write},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -80,9 +80,30 @@ pub fn load_snapshot(
     if !path.exists() {
         return Ok(SnapshotReport::default());
     }
-    let mut file = File::open(path)?;
+    let file = File::open(path)?;
+    let (entries, report) = read_snapshot(file, limits)?;
+    for entry in entries {
+        store.set_with_expiry(entry.key, entry.value, entry.expires_at)?;
+    }
+    Ok(report)
+}
+
+pub fn decode_snapshot(
+    encoded: &[u8],
+    limits: ProtocolLimits,
+) -> Result<(Vec<SnapshotEntry>, SnapshotReport), PersistenceError> {
+    read_snapshot(Cursor::new(encoded), limits)
+}
+
+fn read_snapshot<R>(
+    mut reader: R,
+    limits: ProtocolLimits,
+) -> Result<(Vec<SnapshotEntry>, SnapshotReport), PersistenceError>
+where
+    R: Read,
+{
     let mut header = [0u8; SNAPSHOT_HEADER_SIZE];
-    read_exact_snapshot(&mut file, &mut header, 0, "truncated snapshot header")?;
+    read_exact_snapshot(&mut reader, &mut header, 0, "truncated snapshot header")?;
     if header[..4] != SNAPSHOT_MAGIC || header[4] != SNAPSHOT_VERSION || header[5..8] != [0, 0, 0] {
         return Err(PersistenceError::InvalidSnapshotHeader);
     }
@@ -92,26 +113,27 @@ pub fn load_snapshot(
             .map_err(|_| PersistenceError::InvalidSnapshotHeader)?,
     );
     let mut report = SnapshotReport::default();
+    let mut entries = Vec::new();
     for index in 0..entry_count {
-        let entry = read_entry(&mut file, index, limits)?;
+        let entry = read_entry(&mut reader, index, limits)?;
         if entry
             .expires_at
             .is_some_and(|expires_at| expires_at <= SystemTime::now())
         {
             report.expired_entries_skipped = report.expired_entries_skipped.saturating_add(1);
         } else {
-            store.set_with_expiry(entry.key, entry.value, entry.expires_at)?;
+            entries.push(entry);
             report.entries_loaded = report.entries_loaded.saturating_add(1);
         }
     }
     let mut trailing = [0u8; 1];
-    if file.read(&mut trailing)? != 0 {
+    if reader.read(&mut trailing)? != 0 {
         return Err(PersistenceError::SnapshotCorruption {
             entry: entry_count,
             reason: "trailing bytes after declared entries",
         });
     }
-    Ok(report)
+    Ok((entries, report))
 }
 
 fn write_entry(file: &mut File, entry: &SnapshotEntry) -> Result<(), PersistenceError> {
@@ -142,13 +164,16 @@ fn write_entry(file: &mut File, entry: &SnapshotEntry) -> Result<(), Persistence
     Ok(())
 }
 
-fn read_entry(
-    file: &mut File,
+fn read_entry<R>(
+    reader: &mut R,
     index: u64,
     limits: ProtocolLimits,
-) -> Result<SnapshotEntry, PersistenceError> {
+) -> Result<SnapshotEntry, PersistenceError>
+where
+    R: Read,
+{
     let mut fixed = [0u8; ENTRY_FIXED_SIZE];
-    read_exact_snapshot(file, &mut fixed, index, "truncated entry header")?;
+    read_exact_snapshot(reader, &mut fixed, index, "truncated entry header")?;
     let expires_at_ms = u64::from_be_bytes(
         fixed[..8]
             .try_into()
@@ -175,7 +200,7 @@ fn read_entry(
         .and_then(|length| length.checked_add(4))
         .ok_or_else(|| snapshot_error(index, "entry length overflow"))?;
     let mut variable = vec![0u8; variable_length];
-    read_exact_snapshot(file, &mut variable, index, "truncated entry body")?;
+    read_exact_snapshot(reader, &mut variable, index, "truncated entry body")?;
     let checksum_offset = key_length
         .checked_add(value_length)
         .ok_or_else(|| snapshot_error(index, "checksum offset overflow"))?;
@@ -206,13 +231,16 @@ fn read_entry(
     })
 }
 
-fn read_exact_snapshot(
-    file: &mut File,
+fn read_exact_snapshot<R>(
+    reader: &mut R,
     buffer: &mut [u8],
     entry: u64,
     reason: &'static str,
-) -> Result<(), PersistenceError> {
-    file.read_exact(buffer).map_err(|error| {
+) -> Result<(), PersistenceError>
+where
+    R: Read,
+{
+    reader.read_exact(buffer).map_err(|error| {
         if error.kind() == io::ErrorKind::UnexpectedEof {
             snapshot_error(entry, reason)
         } else {

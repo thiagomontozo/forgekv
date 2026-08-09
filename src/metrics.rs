@@ -18,6 +18,13 @@ pub struct Metrics {
     snapshots_created_total: AtomicU64,
     wal_compactions_total: AtomicU64,
     snapshot_entries_written: AtomicU64,
+    replication_connections_total: AtomicU64,
+    replication_syncs_total: AtomicU64,
+    replication_full_syncs_total: AtomicU64,
+    replication_bytes_sent_total: AtomicU64,
+    replication_bytes_received_total: AtomicU64,
+    replication_errors_total: AtomicU64,
+    replication_lag_bytes: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +45,13 @@ pub struct MetricsSnapshot {
     pub snapshots_created_total: u64,
     pub wal_compactions_total: u64,
     pub snapshot_entries_written: u64,
+    pub replication_connections_total: u64,
+    pub replication_syncs_total: u64,
+    pub replication_full_syncs_total: u64,
+    pub replication_bytes_sent_total: u64,
+    pub replication_bytes_received_total: u64,
+    pub replication_errors_total: u64,
+    pub replication_lag_bytes: u64,
 }
 
 impl Metrics {
@@ -94,9 +108,44 @@ impl Metrics {
             .fetch_add(entries, Ordering::Relaxed);
     }
 
+    pub fn replication_snapshot_created(&self, entries: u64) {
+        self.snapshots_created_total.fetch_add(1, Ordering::Relaxed);
+        self.snapshot_entries_written
+            .fetch_add(entries, Ordering::Relaxed);
+    }
+
     pub fn wal_write(&self, bytes: u64) {
         self.wal_records_written.fetch_add(1, Ordering::Relaxed);
         self.wal_bytes_written.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn replication_connection(&self) {
+        self.replication_connections_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn replication_sent(&self, bytes: u64, full_sync: bool) {
+        self.replication_syncs_total.fetch_add(1, Ordering::Relaxed);
+        if full_sync {
+            self.replication_full_syncs_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        self.replication_bytes_sent_total
+            .fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn replication_received(&self, bytes: u64) {
+        self.replication_bytes_received_total
+            .fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    pub fn replication_error(&self) {
+        self.replication_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn set_replication_lag(&self, bytes: u64) {
+        self.replication_lag_bytes.store(bytes, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> MetricsSnapshot {
@@ -117,6 +166,21 @@ impl Metrics {
             snapshots_created_total: self.snapshots_created_total.load(Ordering::Relaxed),
             wal_compactions_total: self.wal_compactions_total.load(Ordering::Relaxed),
             snapshot_entries_written: self.snapshot_entries_written.load(Ordering::Relaxed),
+            replication_connections_total: self
+                .replication_connections_total
+                .load(Ordering::Relaxed),
+            replication_syncs_total: self.replication_syncs_total.load(Ordering::Relaxed),
+            replication_full_syncs_total: self
+                .replication_full_syncs_total
+                .load(Ordering::Relaxed),
+            replication_bytes_sent_total: self
+                .replication_bytes_sent_total
+                .load(Ordering::Relaxed),
+            replication_bytes_received_total: self
+                .replication_bytes_received_total
+                .load(Ordering::Relaxed),
+            replication_errors_total: self.replication_errors_total.load(Ordering::Relaxed),
+            replication_lag_bytes: self.replication_lag_bytes.load(Ordering::Relaxed),
         }
     }
 }

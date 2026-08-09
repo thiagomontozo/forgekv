@@ -12,8 +12,12 @@ use tokio::{
 use tracing::{error, info, warn};
 
 use crate::{
-    config::Config, error::ForgeError, metrics::Metrics, persistence::Database,
+    config::{Config, ReplicationRole},
+    error::ForgeError,
+    metrics::Metrics,
+    persistence::Database,
     protocol::ProtocolLimits,
+    replication::{run_follower, run_leader},
 };
 
 use connection::{handle_connection, ConnectionContext};
@@ -61,6 +65,35 @@ impl Server {
             let metrics_shutdown = shutdown.clone();
             tokio::spawn(run_metrics_export(listener, metrics, metrics_shutdown))
         });
+        let replication_task = match self.config.replication_role {
+            ReplicationRole::Standalone => None,
+            ReplicationRole::Leader => {
+                let listener = TcpListener::bind(self.config.replication_address()).await?;
+                let config = self.config.clone();
+                let database = Arc::clone(&self.database);
+                let metrics = Arc::clone(&self.metrics);
+                let replication_shutdown = shutdown.clone();
+                Some(tokio::spawn(run_leader(
+                    listener,
+                    config,
+                    database,
+                    metrics,
+                    replication_shutdown,
+                )))
+            }
+            ReplicationRole::Follower => {
+                let config = self.config.clone();
+                let database = Arc::clone(&self.database);
+                let metrics = Arc::clone(&self.metrics);
+                let replication_shutdown = shutdown.clone();
+                Some(tokio::spawn(run_follower(
+                    config,
+                    database,
+                    metrics,
+                    replication_shutdown,
+                )))
+            }
+        };
         let expiration_store = Arc::clone(self.database.store());
         let maintenance_database = Arc::clone(&self.database);
         let expiration_interval = self.config.expiration_interval;
@@ -138,6 +171,7 @@ impl Server {
                         started_at: self.started_at,
                         listening_address: self.listening_address.clone(),
                         fsync: self.config.fsync,
+                        replication_role: self.config.replication_role,
                     });
                     let connection_shutdown = shutdown.clone();
                     connections.spawn(async move {
@@ -169,6 +203,13 @@ impl Server {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => warn!(%error, "metrics exporter stopped with an error"),
                 Err(error) => warn!(%error, "metrics exporter task did not exit cleanly"),
+            }
+        }
+        if let Some(task) = replication_task {
+            match task.await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => warn!(%error, "replication task stopped with an error"),
+                Err(error) => warn!(%error, "replication task did not exit cleanly"),
             }
         }
         info!("ForgeKV server stopped accepting connections");

@@ -145,6 +145,41 @@ pub(crate) fn render_prometheus(metrics: &Metrics) -> String {
             "counter",
             snapshot.snapshot_entries_written,
         ),
+        (
+            "forgekv_replication_connections_total",
+            "counter",
+            snapshot.replication_connections_total,
+        ),
+        (
+            "forgekv_replication_syncs_total",
+            "counter",
+            snapshot.replication_syncs_total,
+        ),
+        (
+            "forgekv_replication_full_syncs_total",
+            "counter",
+            snapshot.replication_full_syncs_total,
+        ),
+        (
+            "forgekv_replication_bytes_sent_total",
+            "counter",
+            snapshot.replication_bytes_sent_total,
+        ),
+        (
+            "forgekv_replication_bytes_received_total",
+            "counter",
+            snapshot.replication_bytes_received_total,
+        ),
+        (
+            "forgekv_replication_errors_total",
+            "counter",
+            snapshot.replication_errors_total,
+        ),
+        (
+            "forgekv_replication_lag_bytes",
+            "gauge",
+            snapshot.replication_lag_bytes,
+        ),
     ];
     let mut output = String::new();
     for (name, metric_type, value) in values {

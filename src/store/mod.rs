@@ -234,6 +234,24 @@ impl ShardedStore {
         }
         Ok(snapshot)
     }
+
+    pub fn replace_all(&self, entries: Vec<SnapshotEntry>) -> Result<(), StoreError> {
+        let mut guards = Vec::with_capacity(self.shards.len());
+        for shard in &self.shards {
+            guards.push(shard.write()?);
+        }
+        for guard in &mut guards {
+            guard.clear();
+        }
+        for entry in entries {
+            let index = self.shard_index(&entry.key);
+            guards[index].insert(
+                entry.key.to_vec(),
+                Entry::new(entry.value, entry.expires_at),
+            );
+        }
+        Ok(())
+    }
 }
 
 fn remove_if_expired(shard: &Shard, key: &[u8], now: SystemTime) -> Result<bool, StoreError> {

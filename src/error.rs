@@ -78,6 +78,24 @@ pub enum PersistenceError {
     SnapshotCorruption { entry: u64, reason: &'static str },
     #[error("snapshot worker failed: {0}")]
     SnapshotTask(String),
+    #[error("persistent metadata is invalid: {0}")]
+    InvalidMetadata(&'static str),
+}
+
+#[derive(Debug, Error)]
+pub enum ReplicationError {
+    #[error("replication I/O error: {0}")]
+    Io(#[from] io::Error),
+    #[error("replication persistence error: {0}")]
+    Persistence(#[from] PersistenceError),
+    #[error("replication store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("invalid replication protocol: {0}")]
+    InvalidProtocol(&'static str),
+    #[error("replication payload size {actual} exceeds configured maximum {maximum}")]
+    PayloadTooLarge { actual: u64, maximum: usize },
+    #[error("replication task failed: {0}")]
+    Task(String),
 }
 
 #[derive(Debug, Error)]
@@ -90,6 +108,8 @@ pub enum ForgeError {
     Store(#[from] StoreError),
     #[error(transparent)]
     Persistence(#[from] PersistenceError),
+    #[error(transparent)]
+    Replication(#[from] ReplicationError),
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 }

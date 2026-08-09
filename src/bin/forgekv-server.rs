@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use forgekv::{
-    config::Config, error::ForgeError, metrics::Metrics, persistence::Database, server::Server,
+    config::{Config, ReplicationRole},
+    error::ForgeError,
+    metrics::Metrics,
+    persistence::Database,
+    replication::initial_sync,
+    server::Server,
     store::ShardedStore,
 };
 use tokio::{net::TcpListener, sync::watch};
@@ -26,6 +31,11 @@ async fn main() -> Result<(), ForgeError> {
         "WAL replay completed"
     );
     let database = Arc::new(database);
+
+    if config.replication_role == ReplicationRole::Follower {
+        info!(leader = %config.leader_address, "performing initial follower synchronization");
+        initial_sync(&config, Arc::clone(&database), Arc::clone(&metrics)).await?;
+    }
 
     let listener = TcpListener::bind(config.listen_address()).await?;
     let listening_address = listener.local_addr()?.to_string();

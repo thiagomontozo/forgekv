@@ -7,6 +7,7 @@ pub mod error;
 pub mod metrics;
 pub mod persistence;
 pub mod protocol;
+pub mod replication;
 pub mod server;
 pub mod store;
 
