@@ -10,9 +10,12 @@ use forgekv::{
     config::FsyncMode,
     error::PersistenceError,
     metrics::Metrics,
-    persistence::{prepare_wal, recover_wal, RecordType, Wal, WalRecord},
+    persistence::{
+        load_snapshot, prepare_wal, recover_wal, write_snapshot_atomic, Database, RecordType, Wal,
+        WalRecord,
+    },
     protocol::ProtocolLimits,
-    store::{ShardedStore, TtlState},
+    store::{ShardedStore, SnapshotEntry, TtlState},
 };
 use tempfile::tempdir;
 
@@ -180,4 +183,109 @@ fn corruption_in_complete_record_is_not_ignored() {
         recover_wal(&path, &store(), limits()),
         Err(PersistenceError::ChecksumMismatch { .. })
     ));
+}
+
+#[test]
+fn snapshot_round_trip_and_checksum_validation() {
+    let directory = tempdir().expect("temp directory should be created");
+    let path = directory.path().join("forgekv.snapshot");
+    let entries = vec![SnapshotEntry {
+        key: Bytes::from_static(b"snapshot:key"),
+        value: Bytes::from_static(b"binary\0value"),
+        expires_at: None,
+    }];
+    write_snapshot_atomic(&path, &entries).expect("snapshot should write");
+    let recovered = store();
+    let report = load_snapshot(&path, &recovered, limits()).expect("snapshot should load");
+    assert_eq!(report.entries_loaded, 1);
+    assert_eq!(
+        recovered.get(b"snapshot:key").expect("get should work"),
+        Some(Bytes::from_static(b"binary\0value"))
+    );
+
+    let mut bytes = std::fs::read(&path).expect("snapshot should read");
+    let last = bytes.last_mut().expect("snapshot should not be empty");
+    *last ^= 0x01;
+    std::fs::write(&path, bytes).expect("corruption should write");
+    assert!(load_snapshot(&path, &store(), limits()).is_err());
+}
+
+#[test]
+fn truncated_snapshot_is_rejected() {
+    let directory = tempdir().expect("temp directory should be created");
+    let path = directory.path().join("forgekv.snapshot");
+    let entries = vec![SnapshotEntry {
+        key: Bytes::from_static(b"key"),
+        value: Bytes::from_static(b"value"),
+        expires_at: None,
+    }];
+    write_snapshot_atomic(&path, &entries).expect("snapshot should write");
+    let mut bytes = std::fs::read(&path).expect("snapshot should read");
+    bytes.truncate(bytes.len() - 1);
+    std::fs::write(&path, bytes).expect("truncated snapshot should write");
+    assert!(load_snapshot(&path, &store(), limits()).is_err());
+}
+
+#[tokio::test]
+async fn everysec_flushes_dirty_wal_on_tick() {
+    let directory = tempdir().expect("temp directory should be created");
+    let path = directory.path().join("forgekv.wal");
+    prepare_wal(&path, FsyncMode::EverySecond).expect("WAL should initialize");
+    let mut wal = Wal::open(
+        &path,
+        FsyncMode::EverySecond,
+        Arc::new(Metrics::default()),
+    )
+    .await
+    .expect("WAL should open");
+    wal.append(
+        &WalRecord::set(Bytes::from_static(b"key"), Bytes::from_static(b"value"))
+            .expect("record should construct"),
+    )
+    .await
+    .expect("append should work");
+    assert!(wal.sync_if_needed().await.expect("sync should work"));
+    assert!(!wal.sync_if_needed().await.expect("clean WAL should not sync"));
+}
+
+#[tokio::test]
+async fn compaction_restarts_from_snapshot_and_new_wal() {
+    let directory = tempdir().expect("temp directory should be created");
+    let config = forgekv::config::Config {
+        data_dir: directory.path().to_path_buf(),
+        shards: 8,
+        fsync: FsyncMode::None,
+        wal_compaction_threshold_bytes: 1,
+        metrics_enabled: false,
+        ..forgekv::config::Config::default()
+    };
+    let metrics = Arc::new(Metrics::default());
+    let active_store = Arc::new(
+        ShardedStore::new(config.shards, Arc::clone(&metrics)).expect("valid shards"),
+    );
+    let (database, _) = Database::open(&config, active_store, metrics)
+        .await
+        .expect("database should open");
+    database
+        .set(
+            Bytes::from_static(b"compacted"),
+            Bytes::from_static(b"value"),
+        )
+        .await
+        .expect("set should work");
+    assert_eq!(database.compact().await.expect("compaction should work"), 1);
+    drop(database);
+
+    let restart_metrics = Arc::new(Metrics::default());
+    let restart_store = Arc::new(
+        ShardedStore::new(config.shards, Arc::clone(&restart_metrics)).expect("valid shards"),
+    );
+    let (_database, report) = Database::open(&config, Arc::clone(&restart_store), restart_metrics)
+        .await
+        .expect("restart should recover");
+    assert_eq!(report.snapshot_entries_loaded, 1);
+    assert_eq!(
+        restart_store.get(b"compacted").expect("get should work"),
+        Some(Bytes::from_static(b"value"))
+    );
 }

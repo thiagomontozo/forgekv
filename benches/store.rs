@@ -29,6 +29,24 @@ fn store_benchmarks(criterion: &mut Criterion) {
     criterion.bench_function("get_miss", |bench| {
         bench.iter(|| store.get(black_box(b"missing")).expect("get should work"));
     });
+
+    for index in 0..1_000 {
+        store
+            .set(
+                Bytes::from(format!("snapshot:{index}")),
+                Bytes::from_static(b"benchmark-value"),
+            )
+            .expect("snapshot setup should work");
+    }
+    criterion.bench_function("snapshot_1000_entries", |bench| {
+        bench.iter(|| {
+            black_box(
+                store
+                    .snapshot_entries()
+                    .expect("snapshot should work"),
+            )
+        });
+    });
 }
 
 criterion_group!(benches, store_benchmarks);

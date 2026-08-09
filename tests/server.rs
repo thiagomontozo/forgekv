@@ -28,6 +28,10 @@ struct RunningServer {
 
 impl RunningServer {
     async fn start() -> Result<Self, Box<dyn Error>> {
+        Self::start_with_limit(1_024).await
+    }
+
+    async fn start_with_limit(max_connections: usize) -> Result<Self, Box<dyn Error>> {
         let data = tempfile::tempdir()?;
         let config = Config {
             host: "127.0.0.1".to_owned(),
@@ -39,6 +43,9 @@ impl RunningServer {
             max_value_size: 32 * 1024,
             expiration_interval: Duration::from_millis(25),
             fsync: FsyncMode::None,
+            max_connections,
+            metrics_enabled: false,
+            ..Config::default()
         };
         let metrics = Arc::new(Metrics::default());
         let store = Arc::new(ShardedStore::new(config.shards, Arc::clone(&metrics))?);
@@ -74,6 +81,48 @@ impl RunningServer {
         timeout(Duration::from_secs(3), self.task).await???;
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn ordered_pipeline_uses_one_tcp_connection() -> Result<(), Box<dyn Error>> {
+    let server = RunningServer::start().await?;
+    let mut client = Client::connect(&server.address, server.limits()).await?;
+    let responses = client
+        .execute_pipeline(vec![
+            forgekv::command::Command::Set {
+                key: Bytes::from_static(b"pipeline:key"),
+                value: Bytes::from_static(b"value"),
+            },
+            forgekv::command::Command::Get {
+                key: Bytes::from_static(b"pipeline:key"),
+            },
+            forgekv::command::Command::Del {
+                key: Bytes::from_static(b"pipeline:key"),
+            },
+        ])
+        .await?;
+    assert_eq!(
+        responses,
+        vec![
+            Response::Ok,
+            Response::Value(Bytes::from_static(b"value")),
+            Response::Integer(1)
+        ]
+    );
+    server.stop().await
+}
+
+#[tokio::test]
+async fn connection_limit_rejects_excess_clients() -> Result<(), Box<dyn Error>> {
+    let server = RunningServer::start_with_limit(1).await?;
+    let mut first = Client::connect(&server.address, server.limits()).await?;
+    assert_eq!(first.ping().await?, Response::Pong);
+    if let Ok(mut second) = Client::connect(&server.address, server.limits()).await {
+        let rejected = timeout(Duration::from_secs(2), second.ping()).await?;
+        assert!(rejected.is_err());
+    }
+    drop(first);
+    server.stop().await
 }
 
 #[tokio::test]
