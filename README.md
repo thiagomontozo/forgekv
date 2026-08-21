@@ -1,5 +1,8 @@
 # ForgeKV
 
+[![CI](https://github.com/thiagomontozo/forgekv/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/thiagomontozo/forgekv/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 High-performance persistent key-value store written in Rust.
 
 > Current status: **Experimental (v0.4.0).** ForgeKV is a systems engineering project and is not production ready.
